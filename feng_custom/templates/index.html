@@ -10,18 +10,14 @@
     <main>
       <header>
         <h1>{{ deck_name }}</h1>
-        <p>自定义网页复习界面（数据来自 AnkiConnect）</p>
       </header>
 
       <div class="card">
-        <div class="controls">
-          <button id="next-btn" class="primary" type="button">下一张</button>
-        </div>
 
         <div id="status">加载中…</div>
 
-        <div class="section-title">提示</div>
-        <div id="prompt"></div>
+        <div class="section-title hidden">提示</div>
+        <div id="prompt" class="hidden"></div>
 
         <div id="writing-original" class="hidden">
           <div class="section-title">参考句子</div>

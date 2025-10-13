@@ -1,4 +1,3 @@
-const nextBtn = document.getElementById("next-btn");
 const revealBtn = document.getElementById("reveal-btn");
 const statusEl = document.getElementById("status");
 const promptEl = document.getElementById("prompt");
@@ -78,6 +77,7 @@ function clearUI() {
   wordInputWrapper.classList.add("hidden");
   wordInput.value = "";
   revealBtn.disabled = true;
+  revealBtn.classList.remove("hidden");
 }
 
 function renderEaseButtons(buttons) {
@@ -216,6 +216,7 @@ async function showAnswer() {
 
   answerBox.innerHTML = html;
   answerBox.classList.remove("hidden");
+  revealBtn.classList.add("hidden");
 
   answerBox.querySelectorAll(".translate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -237,7 +238,6 @@ async function showAnswer() {
 async function loadCard() {
   clearUI();
   statusEl.textContent = "加载中…";
-  nextBtn.disabled = true;
 
   try {
     const res = await fetch("/api/next");
@@ -252,12 +252,10 @@ async function loadCard() {
     currentCard = payload;
     renderCard(payload);
     const counts = payload.counts || {};
-    statusEl.textContent = `当前卡片：${payload.type.toUpperCase()} ｜ Card ${payload.cardId} ｜ 待复习 ${counts.due ?? 0} ｜ 学习 ${counts.learning ?? 0} ｜ 新卡 ${counts.new ?? 0}`;
+    statusEl.textContent = `卡 ${payload.type.toUpperCase()} ｜ 待 ${counts.due ?? 0} ｜ 学 ${counts.learning ?? 0} ｜ 新 ${counts.new ?? 0}`;
     revealBtn.disabled = false;
   } catch (err) {
     statusEl.textContent = `获取卡片失败：${err.message}`;
-  } finally {
-    nextBtn.disabled = false;
   }
 }
 
@@ -268,7 +266,6 @@ async function submitAnswer(ease) {
   statusEl.textContent = "提交中…";
   easeButtons.querySelectorAll("button").forEach((btn) => (btn.disabled = true));
   revealBtn.disabled = true;
-  nextBtn.disabled = true;
 
   try {
     const res = await fetch("/api/answer", {
@@ -286,12 +283,10 @@ async function submitAnswer(ease) {
     statusEl.textContent = `提交失败：${err.message}`;
     easeButtons.querySelectorAll("button").forEach((btn) => (btn.disabled = false));
     revealBtn.disabled = false;
-    nextBtn.disabled = false;
   }
 }
 
 function init() {
-  nextBtn.addEventListener("click", loadCard);
   revealBtn.addEventListener("click", async () => {
     revealBtn.disabled = true;
     await showAnswer();
