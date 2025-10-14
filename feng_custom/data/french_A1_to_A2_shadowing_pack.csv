@@ -1,0 +1,95 @@
+French,IPA,English,Example (FR),Example (EN),Tags
+Bonjour,bɔ̃ʒuʁ,Hello; good morning,"Bonjour, ça va ?","Hello, how are you?",Greeting
+Bonsoir,bɔ̃swaʁ,Good evening,"Bonsoir, madame.","Good evening, ma’am.",Greeting
+Salut,saly,Hi; bye (informal),"Salut, à demain !","Hi, see you tomorrow!",Greeting
+Merci,mɛʁsi,Thank you,Merci beaucoup.,Thank you very much.,Polite
+De rien,də ʁjɛ̃,You're welcome,— Merci ! — De rien.,— Thanks! — You're welcome.,Polite
+S’il vous plaît,sil vu plɛ,Please (formal),"Un café, s’il vous plaît.","A coffee, please.",Polite
+Pardon,paʁdɔ̃,Sorry; excuse me,"Pardon, je passe.","Excuse me, I’m passing.",Polite
+Excusez-moi,ɛkskyze mwa,Excuse me (formal),"Excusez-moi, où sont les toilettes ?","Excuse me, where is the restroom?",Polite
+Oui,wi,Yes,"Oui, j’ai compris.","Yes, I understood.",Core
+Non,nɔ̃,No,"Non, pas encore.","No, not yet.",Core
+D’accord,d‿akɔʁ,Okay; agreed,"D’accord, on y va.","Okay, let’s go.",Core
+Je ne comprends pas,ʒə nə kɔ̃pʁɑ̃ pa,I don’t understand,"Désolé, je ne comprends pas.","Sorry, I don’t understand.",Core
+Je,ʒə,I,Je suis étudiant.,I am a student.,Pronoun
+Tu,ty,You (informal),Tu habites où ?,Where do you live?,Pronoun
+Vous,vu,You (formal/plural),Vous parlez anglais ?,Do you speak English?,Pronoun
+Il,il,He/it,Il est sympa.,He is nice.,Pronoun
+Elle,ɛl,She/it,Elle travaille ici.,She works here.,Pronoun
+On,ɔ̃,We/one (informal),On y va ?,Shall we go?,Pronoun
+Nous,nu,We (formal),Nous allons au musée.,We are going to the museum.,Pronoun
+Être,ɛtʁ,to be,Je suis fatigué.,I am tired.,Verb
+Avoir,avwaʁ,to have,J’ai un rendez-vous.,I have an appointment.,Verb
+Aller,ale,to go,Je vais à la gare.,I’m going to the station.,Verb
+Faire,fɛʁ,to do; to make,Je fais mes devoirs.,I’m doing my homework.,Verb
+Pouvoir,puvwaʁ,can; to be able to,Je peux aider.,I can help.,Verb
+Vouloir,vulwaʁ,to want,Je veux un ticket.,I want a ticket.,Verb
+Devoir,dəvwaʁ,must; to have to,Je dois partir.,I have to leave.,Verb
+Prendre,pʁɑ̃dʁ,to take,Je prends le métro.,I take the metro.,Verb
+Venir,vəniʁ,to come,Je viens demain.,I’m coming tomorrow.,Verb
+Mettre,mɛtʁ,to put; to set,Je mets la table.,I set the table.,Verb
+Parler,paʁle,to speak,Je parle un peu français.,I speak a little French.,Verb
+Manger,mɑ̃ʒe,to eat,Je mange sur place.,I eat here.,Verb
+Boire,bwaʁ,to drink,Je bois de l’eau.,I drink water.,Verb
+Acheter,aʃte,to buy,J’achète un billet.,I’m buying a ticket.,Verb
+Aimer,eme,to like; to love,J’aime ce café.,I like this café.,Verb
+Habiter,abite,to live; to reside,J’habite à Montréal.,I live in Montreal.,Verb
+Travailler,tʁavaje,to work,Je travaille demain.,I work tomorrow.,Verb
+Étudier,etydje,to study,J’étudie le français.,I’m studying French.,Verb
+Comprendre,kɔ̃pʁɑ̃dʁ,to understand,Je comprends un peu.,I understand a little.,Verb
+Apprendre,apʁɑ̃dʁ,to learn,J’apprends vite.,I learn fast.,Verb
+Savoir,savwaʁ,to know (facts),Je ne sais pas.,I don’t know.,Verb
+Connaître,kɔnɛtʁ,to know (be familiar with),Je connais ce quartier.,I know this neighborhood.,Verb
+La gare,la ɡaʁ,train station,La gare est loin ?,Is the station far?,Travel
+Le métro,lə metʁo,metro; subway,Le métro est rapide.,The metro is fast.,Travel
+La station,la stasjɔ̃,station/stop,Descendez à la prochaine station.,Get off at the next stop.,Travel
+Le bus,lə bys,bus,Où est l’arrêt de bus ?,Where is the bus stop?,Travel
+La rue,la ʁy,street,C’est dans cette rue.,It’s on this street.,Travel
+L’hôtel,l‿otɛl,hotel,L’hôtel est complet.,The hotel is full.,Travel
+Le restaurant,lə ʁɛstoʁɑ̃,restaurant,Ce restaurant est ouvert.,This restaurant is open.,Travel
+Les toilettes,le twalɛt,restroom,Les toilettes sont où ?,Where is the restroom?,Travel
+La salle de bain,la sal də bɛ̃,bathroom,La salle de bain est propre.,The bathroom is clean.,Travel
+La carte,la kaʁt,map; menu,Avez-vous une carte ?,Do you have a map/menu?,Travel
+Le menu,lə məny,menu,Je prends le menu du jour.,I’ll have the daily menu.,Food
+L’addition,ladisjɔ̃,bill (restaurant),"L’addition, s’il vous plaît.","The bill, please.",Food
+Le prix,lə pʁi,price,Quel est le prix ?,What’s the price?,Shopping
+La facture,la faktyʁ,invoice; bill,Voici la facture.,Here is the invoice.,Shopping
+Un billet,œ̃ bijɛ,ticket,"Un billet pour Lyon, s’il vous plaît.","A ticket to Lyon, please.",Travel
+Un café,œ̃ kafe,a coffee,Je prends un café.,I’ll have a coffee.,Food
+De l’eau,də lo,water,Je bois de l’eau.,I drink water.,Food
+À gauche,a ɡoʃ,to the left,Tournez à gauche.,Turn left.,Direction
+À droite,a dʁwat,to the right,Tournez à droite.,Turn right.,Direction
+Tout droit,tu dʁwa,straight ahead,Allez tout droit.,Go straight ahead.,Direction
+Ici,isi,here,C’est ici.,It is here.,Direction
+Là-bas,laba,over there,C’est là-bas.,It’s over there.,Direction
+Près,pʁɛ,near,C’est près d’ici.,It’s near here.,Direction
+Loin,lwɛ̃,far,C’est loin ?,Is it far?,Direction
+Aujourd’hui,oʒuʁdɥi,today,C’est pour aujourd’hui.,It’s for today.,Time
+Demain,dəmɛ̃,tomorrow,À demain !,See you tomorrow!,Time
+Hier,ijɛʁ,yesterday,C’était hier.,It was yesterday.,Time
+Maintenant,mɛ̃tnɑ̃,now,Je pars maintenant.,I’m leaving now.,Time
+Bientôt,bjɛ̃to,soon,J’arrive bientôt.,I’ll arrive soon.,Time
+Combien,kɔ̃bjɛ̃,how much/many,Ça coûte combien ?,How much is it?,Question
+Pourquoi,puʁkwa,why,Pourquoi pas ?,Why not?,Question
+Quand,kɑ̃,when,C’est quand ?,When is it?,Question
+Où,u,where,Tu vas où ?,Where are you going?,Question
+Comment,kɔmɑ̃,how,Comment ça va ?,How’s it going?,Question
+Quoi,kwa,what (informal),Tu dis quoi ?,What are you saying?,Question
+Qui,ki,who,Qui est-ce ?,Who is it?,Question
+Parce que,paʁs kə,because,Je pars parce que je suis fatigué.,I’m leaving because I’m tired.,Connector
+Très,tʁɛ,very,C’est très bon.,It’s very good.,Modifier
+Un peu,œ̃ pø,a little,Je parle un peu.,I speak a little.,Modifier
+Plus,ply,more,Je veux plus d’eau.,I want more water.,Modifier
+Moins,mwɛ̃,less,"Moins de sucre, s’il vous plaît.","Less sugar, please.",Modifier
+Bon marché,bɔ̃ maʁʃe,cheap; inexpensive,C’est bon marché.,It’s cheap.,Shopping
+Cher,ʃɛʁ,expensive; dear,C’est trop cher.,It’s too expensive.,Shopping
+Chaud,ʃo,hot,C’est trop chaud.,It’s too hot.,Adjective
+Froid,fʁwa,cold,Il fait froid.,It’s cold.,Adjective
+Grand,ɡʁɑ̃,big; tall,"Un grand café, s’il vous plaît.","A large coffee, please.",Adjective
+Petit,pəti,small; little,Une petite portion.,A small portion.,Adjective
+Nouveau,nuvo,new,Un nouveau téléphone.,A new phone.,Adjective
+Vieux,vjø,old,Un vieux quartier.,An old neighborhood.,Adjective
+Bon,bɔ̃,good,C’est bon.,It’s good.,Adjective
+Mauvais,movɛ,bad,C’est un mauvais plan.,It’s a bad plan.,Adjective
+Facile,fasil,easy,C’est facile à comprendre.,It’s easy to understand.,Adjective
+Difficile,difisil,difficult,C’est difficile pour moi.,It’s difficult for me.,Adjective

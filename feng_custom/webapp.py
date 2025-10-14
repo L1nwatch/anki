@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import base64
 import difflib
+import os
 import re
+import tempfile
+import threading
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +20,7 @@ BASE_DIR = Path(__file__).parent
 
 ANKI_CONNECT = "http://127.0.0.1:8765"
 DECK_NAME = "English-CLB9"
+FRENCH_DECK_NAME = "French-NCLC 7"
 TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()\"“”‘’]")
 SOUND_RE = re.compile(r"\[sound:(.+?)\]")
 TRANSLATE_HEADERS = {
@@ -31,7 +36,19 @@ app = Flask(
     static_folder=str(BASE_DIR / "static"),
 )
 
-CURRENT_CARD: Optional[Dict[str, Any]] = None
+CURRENT_CARDS: Dict[str, Optional[Dict[str, Any]]] = {
+    DECK_NAME: None,
+    FRENCH_DECK_NAME: None,
+}
+
+try:
+    import whisper  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    whisper = None  # type: ignore
+
+WHISPER_MODEL_NAME = os.environ.get("FRENCH_WHISPER_MODEL", "base")
+_WHISPER_MODEL = None
+_WHISPER_LOCK = threading.Lock()
 
 
 def invoke(action: str, **params: Any) -> Any:
@@ -63,12 +80,77 @@ def media_to_data_url(filename: str | None) -> str | None:
     return f"data:audio/mpeg;base64,{data}"
 
 
-def deck_counts() -> Dict[str, int]:
+def get_whisper_model():
+    if whisper is None:  # pragma: no cover - optional dependency check
+        raise RuntimeError("whisper package is not installed. Please install openai-whisper or faster-whisper.")
+    global _WHISPER_MODEL
+    with _WHISPER_LOCK:
+        if _WHISPER_MODEL is None:
+            _WHISPER_MODEL = whisper.load_model(WHISPER_MODEL_NAME)
+    return _WHISPER_MODEL
+
+
+def transcribe_with_whisper(path: Path) -> str:
+    model = get_whisper_model()
+    result = model.transcribe(str(path), language="fr", task="transcribe")
+    text = (result.get("text") or "").strip()
+    return text
+
+
+def normalize_for_compare(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text or "")
+    stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return re.sub(r"[^a-zœæç'\-]+", " ", stripped.lower()).strip()
+
+
+def levenshtein_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev_row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        current = [i]
+        for j, cb in enumerate(b, start=1):
+            insert_cost = current[j - 1] + 1
+            delete_cost = prev_row[j] + 1
+            replace_cost = prev_row[j - 1] + (0 if ca == cb else 1)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        prev_row = current
+    return prev_row[-1]
+
+
+def similarity_score(expected: str, actual: str) -> float:
+    clean_expected = normalize_for_compare(expected)
+    clean_actual = normalize_for_compare(actual)
+    if not clean_expected or not clean_actual:
+        return 0.0
+    distance = levenshtein_distance(clean_expected, clean_actual)
+    max_len = max(len(clean_expected), len(clean_actual))
+    if max_len == 0:
+        return 0.0
+    return max(0.0, 1.0 - distance / max_len)
+
+
+def feedback_for_score(score: float) -> str:
+    pct = round(score * 100)
+    if score >= 0.85:
+        return f"匹配度 {pct}%：发音非常接近，继续保持！"
+    if score >= 0.6:
+        return f"匹配度 {pct}%：不错，可以再注意重音或连读。"
+    if score > 0:
+        return f"匹配度 {pct}%：识别偏差较大，建议重新听原音后再试。"
+    return "未识别到有效文本，请再试一次。"
+
+
+def deck_counts(deck_name: str) -> Dict[str, int]:
     names = invoke("deckNamesAndIds") or {}
-    deck_id = names.get(DECK_NAME)
+    deck_id = names.get(deck_name)
     if deck_id is None:
         return {"due": 0, "new": 0, "learning": 0}
-    stats_map = invoke("getDeckStats", decks=[DECK_NAME]) or {}
+    stats_map = invoke("getDeckStats", decks=[deck_name]) or {}
     stats = stats_map.get(str(deck_id), {})
     return {
         "due": stats.get("review_count", 0),
@@ -144,16 +226,16 @@ def determine_type(fields: Dict[str, Dict[str, str]]) -> str:
     return "generic"
 
 
-def ensure_review_ready() -> Dict[str, Any]:
+def ensure_review_ready(deck_name: str) -> Dict[str, Any]:
     try:
         card = invoke("guiCurrentCard")
-        if card:
+        if card and card.get("deckName") == deck_name:
             return card
     except RuntimeError:
         pass
-    invoke("guiDeckReview", name=DECK_NAME)
+    invoke("guiDeckReview", name=deck_name)
     card = invoke("guiCurrentCard")
-    if not card:
+    if not card or card.get("deckName") != deck_name:
         raise RuntimeError("no cards available")
     try:
         invoke("guiShowQuestion")
@@ -162,28 +244,7 @@ def ensure_review_ready() -> Dict[str, Any]:
     return card
 
 
-@app.get("/")
-def index():
-    return render_template("index.html", deck_name=DECK_NAME)
-
-
-@app.get("/api/next")
-def api_next():
-    global CURRENT_CARD
-    try:
-        card = ensure_review_ready()
-    except RuntimeError:
-        CURRENT_CARD = None
-        return jsonify({"error": "no cards due"}), 404
-
-    # stop any automatic audio playback from Anki
-    try:
-        invoke("stopAudio")
-        time.sleep(0.2)
-        invoke("stopAudio")
-    except RuntimeError:
-        pass
-
+def build_clb9_payload(card: Dict[str, Any]) -> Dict[str, Any]:
     fields = card.get("fields", {})
     note_type = determine_type(fields)
 
@@ -214,20 +275,78 @@ def api_next():
             "answer": card.get("answer", ""),
         }
 
-    buttons = card.get("buttons", []) or [1, 2, 3, 4]
-    CURRENT_CARD = {
-        "cardId": card.get("cardId"),
-        "type": note_type,
+    return {"type": note_type, "data": data}
+
+
+def build_french_payload(card: Dict[str, Any]) -> Dict[str, Any]:
+    fields = card.get("fields", {})
+    audio_file = extract_sound(fields.get("Audio", {}).get("value", ""))
+    sentence = fields.get("ExampleFR", {}).get("value", "")
+    word = fields.get("French", {}).get("value", "")
+    data = {
+        "sentence": sentence,
+        "word": word,
+        "english": fields.get("ExampleEN", {}).get("value", ""),
+        "exampleFr": sentence,
+        "audioUrl": media_to_data_url(audio_file) if audio_file else None,
+    }
+    return {"type": "shadowing", "data": data}
+
+
+PAYLOAD_BUILDERS = {
+    DECK_NAME: build_clb9_payload,
+    FRENCH_DECK_NAME: build_french_payload,
+}
+
+
+def build_payload(deck_name: str, card: Dict[str, Any]) -> Dict[str, Any]:
+    builder = PAYLOAD_BUILDERS.get(deck_name)
+    if builder is None:
+        return {
+            "type": "generic",
+            "data": {
+                "prompt": card.get("question", ""),
+                "answer": card.get("answer", ""),
+            },
+        }
+    return builder(card)
+
+
+def set_current_card(deck_name: str, card_id: Optional[int], buttons: List[int]) -> None:
+    CURRENT_CARDS[deck_name] = {
+        "cardId": card_id,
         "buttons": buttons,
     }
 
-    counts = deck_counts()
+
+def current_card_state(deck_name: str) -> Optional[Dict[str, Any]]:
+    return CURRENT_CARDS.get(deck_name)
+
+
+def handle_next(deck_name: str) -> Any:
+    try:
+        card = ensure_review_ready(deck_name)
+    except RuntimeError:
+        set_current_card(deck_name, None, [])
+        return jsonify({"error": "no cards due"}), 404
+
+    try:
+        invoke("stopAudio")
+        time.sleep(0.2)
+        invoke("stopAudio")
+    except RuntimeError:
+        pass
+
+    buttons = card.get("buttons", []) or [1, 2, 3, 4]
+    set_current_card(deck_name, card.get("cardId"), buttons)
+    counts = deck_counts(deck_name)
+    payload = build_payload(deck_name, card)
 
     return jsonify(
         {
             "cardId": card.get("cardId"),
-            "type": note_type,
-            "data": data,
+            "type": payload.get("type", "generic"),
+            "data": payload.get("data", {}),
             "questionHtml": card.get("question", ""),
             "answerHtml": card.get("answer", ""),
             "buttons": buttons,
@@ -236,8 +355,16 @@ def api_next():
     )
 
 
-@app.post("/api/reveal")
-def api_reveal():
+def handle_reveal(deck_name: str) -> Any:
+    state = current_card_state(deck_name)
+    if not state or not state.get("cardId"):
+        return jsonify({"error": "no active card"}), 409
+    try:
+        card = ensure_review_ready(deck_name)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 500
+    if card.get("cardId") != state.get("cardId"):
+        return jsonify({"error": "card mismatch"}), 409
     try:
         invoke("guiShowAnswer")
         return jsonify({"status": "ok"})
@@ -245,21 +372,26 @@ def api_reveal():
         return jsonify({"error": str(exc)}), 500
 
 
-@app.post("/api/answer")
-def api_answer():
-    global CURRENT_CARD
+def handle_answer(deck_name: str) -> Any:
     payload = request.get_json(force=True, silent=True) or {}
     card_id = payload.get("cardId")
     ease = payload.get("ease")
     if not isinstance(card_id, int) or not isinstance(ease, int):
         return jsonify({"error": "invalid payload"}), 400
-    if not CURRENT_CARD or CURRENT_CARD.get("cardId") != card_id:
+    state = current_card_state(deck_name)
+    if not state or state.get("cardId") != card_id:
+        return jsonify({"error": "card mismatch"}), 409
+    try:
+        card = ensure_review_ready(deck_name)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 500
+    if card.get("cardId") != card_id:
         return jsonify({"error": "card mismatch"}), 409
     try:
         ok = invoke("guiAnswerCard", ease=ease)
         if not ok:
             return jsonify({"error": "failed to answer card"}), 500
-        CURRENT_CARD = None
+        set_current_card(deck_name, None, [])
         try:
             invoke("guiShowQuestion")
         except RuntimeError:
@@ -269,6 +401,105 @@ def api_answer():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.get("/")
+def index():
+    return render_template(
+        "home.html",
+        english_deck=DECK_NAME,
+        french_deck=FRENCH_DECK_NAME,
+    )
+
+
+@app.get("/english")
+def english_index():
+    return render_template("index.html", deck_name=DECK_NAME)
+
+
+@app.get("/api/next")
+def api_next():
+    return handle_next(DECK_NAME)
+
+
+@app.post("/api/reveal")
+def api_reveal():
+    return handle_reveal(DECK_NAME)
+
+
+@app.post("/api/answer")
+def api_answer():
+    return handle_answer(DECK_NAME)
+
+
+@app.get("/french")
+def french_index():
+    return render_template("french.html", deck_name=FRENCH_DECK_NAME)
+
+
+@app.get("/api/fr/next")
+def api_french_next():
+    return handle_next(FRENCH_DECK_NAME)
+
+
+@app.post("/api/fr/reveal")
+def api_french_reveal():
+    return handle_reveal(FRENCH_DECK_NAME)
+
+
+@app.post("/api/fr/answer")
+def api_french_answer():
+    return handle_answer(FRENCH_DECK_NAME)
+
+
+@app.post("/api/fr/analyze")
+def api_french_analyze():
+    state = current_card_state(FRENCH_DECK_NAME)
+    if not state or not state.get("cardId"):
+        return jsonify({"error": "no active card"}), 409
+
+    try:
+        card_id = int(request.form.get("cardId", ""))
+    except ValueError:
+        return jsonify({"error": "invalid card id"}), 400
+
+    if state.get("cardId") != card_id:
+        return jsonify({"error": "card mismatch"}), 409
+
+    audio_file = request.files.get("audio")
+    if audio_file is None or not audio_file.filename:
+        return jsonify({"error": "audio file missing"}), 400
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as handle:
+            audio_file.save(handle)
+            temp_path = Path(handle.name)
+
+        try:
+            card = ensure_review_ready(FRENCH_DECK_NAME)
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 500
+
+        if card.get("cardId") != card_id:
+            return jsonify({"error": "card mismatch"}), 409
+
+        try:
+            transcript = transcribe_with_whisper(temp_path)
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 503
+
+        expected = card.get("fields", {}).get("French", {}).get("value", "") or ""
+        score = similarity_score(expected, transcript)
+        feedback = feedback_for_score(score)
+        return jsonify(
+            {
+                "transcript": transcript,
+                "score": score,
+                "feedback": feedback,
+            }
+        )
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 @app.post("/api/diff")
 def api_diff():
     payload = request.get_json(force=True, silent=True) or {}

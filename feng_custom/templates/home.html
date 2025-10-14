@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>选择练习模式</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+  </head>
+  <body>
+    <main class="deck-selector">
+      <header>
+        <h1>请选择练习内容</h1>
+        <p>使用自定义网页界面复习目标语言。</p>
+      </header>
+
+      <section class="deck-options">
+        <a class="deck-option" href="{{ url_for('english_index') }}">
+          <div class="deck-title">英语 CLB9</div>
+          <div class="deck-subtitle">听力、拼写、写作综合练习</div>
+        </a>
+        <a class="deck-option" href="{{ url_for('french_index') }}">
+          <div class="deck-title">法语影子练习</div>
+          <div class="deck-subtitle">A1-A2 词汇跟读与发音评分</div>
+        </a>
+      </section>
+
+      <footer>
+        Web 界面通过 AnkiConnect 访问牌组。确保桌面版 Anki 正在运行。
+      </footer>
+    </main>
+  </body>
+</html>

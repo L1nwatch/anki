@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>French Shadowing Reviewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='french.css') }}" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>{{ deck_name }}</h1>
+        <p>法语 A1-A2 影子练习</p>
+      </header>
+
+      <div class="card shadow-card">
+        <div id="status">加载中…</div>
+
+        <div class="shadow-display">
+          <div id="sentence-text" class="shadow-sentence"></div>
+        </div>
+
+        <div id="prompt-audio-wrapper" class="shadow-prompt hidden">
+          <audio id="prompt-audio" controls></audio>
+        </div>
+
+        <div class="shadow-controls">
+          <button id="record-btn" type="button">开始录音</button>
+          <button id="reveal-btn" type="button" disabled>显示答案</button>
+        </div>
+
+        <div id="recording-status" class="shadow-recording-status"></div>
+
+        <audio id="playback-audio" class="hidden" controls></audio>
+
+        <div id="answer-box" class="hidden">
+          <div id="english-meaning" class="shadow-english"></div>
+          <div id="example-block" class="shadow-example hidden">
+          <div id="example-fr" class="fr"></div>
+          <div id="example-en" class="en"></div>
+        </div>
+          <div id="transcript-box" class="shadow-transcript hidden"></div>
+          <div id="feedback-box" class="shadow-feedback hidden"></div>
+        </div>
+
+        <div id="ease-buttons" class="hidden"></div>
+      </div>
+
+      <footer>
+        通过 AnkiConnect 同步“french-nclc 7”牌组数据，本地浏览器进行语音对比。
+      </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='french.js') }}" defer></script>
+  </body>
+</html>
