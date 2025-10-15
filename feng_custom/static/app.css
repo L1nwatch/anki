@@ -229,6 +229,20 @@ footer {
   margin-top: 40px;
 }
 
+.nav-link {
+  margin: 8px 0 0;
+}
+
+.nav-link a {
+  color: #9fb5d1;
+  text-decoration: none;
+}
+
+.nav-link a:hover {
+  color: #cbd9f3;
+  text-decoration: underline;
+}
+
 @media (max-width: 600px) {
   main {
     padding: 16px 12px 60px;
