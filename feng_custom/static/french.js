@@ -27,6 +27,9 @@ let recognition = null;
 let recognitionShouldRestart = false;
 let recognitionActive = false;
 let recognizedSegments = [];
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+let iosHasRecorded = false;
+let iosReloading = false;
 
 const easeLabels = {
   1: "再来",
@@ -199,6 +202,12 @@ async function startRecording() {
     recordingStatus.textContent = "当前浏览器不支持录音。";
     return;
   }
+  if (isIOS && iosHasRecorded && !iosReloading) {
+    iosReloading = true;
+    const url = `${window.location.pathname}?ts=${Date.now()}`;
+    window.location.replace(url);
+    return;
+  }
   recordBtn.disabled = true;
   recordingStatus.textContent = "请求麦克风权限…";
   try {
@@ -224,6 +233,7 @@ async function startRecording() {
       mediaRecorder = null;
     };
     mediaRecorder.start();
+    iosHasRecorded = true;
     recordBtn.textContent = "停止录音";
     recordBtn.classList.add("recording");
     recordingStatus.textContent = "录音中… 影子跟读吧！";
