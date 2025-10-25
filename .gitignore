@@ -21,3 +21,8 @@ ts/.svelte-kit
 .claude/settings.local.json
 .claude/user.md
 feng_custom/.venv/
+.history/
+feng_custom/data/listen_cache/
+feng_custom/webapp.log
+feng_custom/webapp_launchd.err
+feng_custom/webapp_launchd.log

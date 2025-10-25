@@ -7,6 +7,8 @@ const listenInputWrapper = document.getElementById("listen-input-wrapper");
 const listenInput = document.getElementById("listen-input");
 const wordInputWrapper = document.getElementById("word-input-wrapper");
 const wordInput = document.getElementById("word-input");
+const writingInputWrapper = document.getElementById("writing-input-wrapper");
+const writingInput = document.getElementById("writing-input");
 const writingOriginal = document.getElementById("writing-original");
 const writingOriginalContent = writingOriginal.querySelector(".content");
 const answerBox = document.getElementById("answer-box");
@@ -76,6 +78,8 @@ function clearUI() {
   listenInput.value = "";
   wordInputWrapper.classList.add("hidden");
   wordInput.value = "";
+  writingInputWrapper.classList.add("hidden");
+  writingInput.value = "";
   revealBtn.disabled = true;
   revealBtn.classList.remove("hidden");
 }
@@ -108,15 +112,23 @@ function renderCard(payload) {
     listenInputWrapper.classList.remove("hidden");
     listenInput.focus();
     writingOriginal.classList.add("hidden");
+    writingInputWrapper.classList.add("hidden");
+    writingInput.value = "";
   } else if (type === "word") {
     wordInputWrapper.classList.remove("hidden");
     wordInput.focus();
     writingOriginal.classList.add("hidden");
+    writingInputWrapper.classList.add("hidden");
+    writingInput.value = "";
   } else if (type === "writing") {
     writingOriginal.classList.remove("hidden");
     writingOriginalContent.textContent = data.original || "";
+    writingInputWrapper.classList.remove("hidden");
+    writingInput.focus();
   } else {
     writingOriginal.classList.add("hidden");
+    writingInputWrapper.classList.add("hidden");
+    writingInput.value = "";
   }
 
   if (data.audioUrl) {
@@ -206,10 +218,47 @@ async function showAnswer() {
       `;
     }
   } else if (type === "writing") {
-    html = `
-      <div><strong>修改建议：</strong></div>
-      <div>${escapeHtml(data.corrected)}</div>
-    `;
+    const expectedText = data.corrected || "";
+    const userText = writingInput.value.trim();
+    try {
+      const diff = await fetchDiff(expectedText, userText);
+      const expectedHtml = diff.expected?.length
+        ? renderTokens(diff.expected)
+        : `<em>${escapeHtml(expectedText || "")}</em>`;
+      const actualHtml = userText
+        ? diff.actual?.length
+          ? renderTokens(diff.actual)
+          : escapeHtml(userText)
+        : "<em>（未填写）</em>";
+      const translation = expectedText
+        ? `<div class="translation-block" data-text="${escapeHtml(expectedText)}">
+            <button type="button" class="translate-btn">显示中文翻译</button>
+            <div class="translation-text hidden"></div>
+          </div>`
+        : "";
+      const originalBlock = data.original
+        ? `<div class="section-title">原句参考</div><div>${escapeHtml(data.original)}</div>`
+        : "";
+      html = `
+        <div><strong>修改建议（标准答案）：</strong></div>
+        <div class="diff-line">${expectedHtml}</div>
+        ${originalBlock}
+        <div class="section-title">你的输入</div>
+        <div class="diff-line">${actualHtml}</div>
+        ${translation}
+      `;
+    } catch (err) {
+      const originalBlock = data.original
+        ? `<div class="section-title">原句参考</div><div>${escapeHtml(data.original)}</div>`
+        : "";
+      html = `
+        <div><strong>修改建议（标准答案）：</strong></div>
+        <div class="diff-line">${escapeHtml(expectedText || "")}</div>
+        ${originalBlock}
+        <div class="section-title">你的输入</div>
+        <div class="diff-line">${userText ? escapeHtml(userText) : "<em>（未填写）</em>"}</div>
+      `;
+    }
   } else {
     html = answerHtml || "<em>无答案</em>";
   }

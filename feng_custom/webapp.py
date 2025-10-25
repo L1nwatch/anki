@@ -53,9 +53,15 @@ _WHISPER_LOCK = threading.Lock()
 
 def invoke(action: str, **params: Any) -> Any:
     payload = {"action": action, "version": 6, "params": params}
-    resp = requests.post(ANKI_CONNECT, json=payload, timeout=15)
-    resp.raise_for_status()
-    body = resp.json()
+    try:
+        resp = requests.post(ANKI_CONNECT, json=payload, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"AnkiConnect 网络请求失败：{exc}") from exc
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise RuntimeError("AnkiConnect 返回无法解析的 JSON 数据。") from exc
     if body.get("error"):
         raise RuntimeError(body["error"])
     return body.get("result")
@@ -386,7 +392,14 @@ def handle_answer(deck_name: str) -> Any:
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 500
     if card.get("cardId") != card_id:
-        return jsonify({"error": "card mismatch"}), 409
+        # 如果前一次答题已在 Anki 端生效（例如网络异常导致响应丢失），
+        # 这里直接视为成功并清理状态，让前端刷新到下一张卡片。
+        set_current_card(deck_name, None, [])
+        try:
+            invoke("guiShowQuestion")
+        except RuntimeError:
+            pass
+        return jsonify({"status": "ok", "cardAdvanced": True})
     try:
         ok = invoke("guiAnswerCard", ease=ease)
         if not ok:

@@ -235,7 +235,9 @@ def invoke(action: str, **params):
 
 
 def ensure_deck(deck: str) -> None:
-    invoke("createDeck", deck=deck)
+    decks = invoke("deckNames") or []
+    if deck not in decks:
+        invoke("createDeck", deck=deck)
 
 
 def ensure_model(
