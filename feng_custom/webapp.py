@@ -432,11 +432,17 @@ def handle_answer(deck_name: str) -> Any:
 
 @app.get("/")
 def index():
+    english_counts = deck_counts(DECK_NAME)
+    french_counts = deck_counts(FRENCH_DECK_NAME)
+    french_vocab_counts = deck_counts(FRENCH_VOCAB_DECK_NAME)
     return render_template(
         "home.html",
         english_deck=DECK_NAME,
+        english_counts=english_counts,
         french_deck=FRENCH_DECK_NAME,
+        french_counts=french_counts,
         french_vocab_deck=FRENCH_VOCAB_DECK_NAME,
+        french_vocab_counts=french_vocab_counts,
     )
 
 
