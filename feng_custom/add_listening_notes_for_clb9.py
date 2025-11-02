@@ -63,10 +63,11 @@ class Segment:
         return max(0.0, self.end - self.start)
 
 
-# Shared state populated in main()
-AUDIO_PATH: Path
+# Shared state populated in main() / load_audio_file()
+AUDIO_PATH: Path = Path()
 SEGMENTS: List[Segment] = []
 AUDIO_DURATION: float = 0.0
+AUDIO_LOADED = False
 SEGMENT_LOCK = threading.Lock()
 TRANSCRIPTION_NOTICE: str = ""
 
@@ -105,16 +106,23 @@ textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-ra
 .preview-cell audio { display: none; width: 220px; height: 32px; }
 .transcript-note { color: #516a9e; margin: 12px 0; font-size: 13px; }
 .transcript-cell { width: 100%; }
+.audio-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.audio-bar input[type="text"] { flex: 1; padding: 8px 12px; border: 1px solid #c5d6f2; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+.audio-bar input[type="text"]:focus { outline: none; border-color: #6f8de8; box-shadow: 0 0 0 2px rgba(63,105,224,0.15); }
+.audio-bar label { font-size: 12px; color: #516a9e; display: flex; align-items: center; gap: 6px; }
 </style>
 </head>
 <body>
 <h1>CLB9 听力选段工具</h1>
 <section>
-  <div class=\"notice\">当前音频：<strong>{{ audio_name }}</strong>（总时长：{{ duration_label }}）</div>
+  <div class=\"audio-bar\">
+    <input type=\"text\" id=\"audio-path\" placeholder=\"输入音频文件路径\" value=\"{{ audio_path }}\" />
+    <label><input type=\"checkbox\" id=\"no-cache\"> 忽略缓存</label>
+    <button id=\"load-audio\" type=\"button\">加载音频</button>
+  </div>
+  <div class=\"notice\">当前音频：<strong id=\"audio-name\">{{ audio_name }}</strong>（总时长：<span id=\"audio-duration\">{{ duration_label }}</span>）</div>
   <div class=\"notice\">步骤：1) 试听并微调起止时间  2) 核对自动转写文本  3) 选择想要导入的句子并点击“添加到 Anki”</div>
-  {% if transcription_notice %}
-    <div class=\"transcript-note\">{{ transcription_notice }}</div>
-  {% endif %}
+  <div class=\"transcript-note\" id=\"transcription-notice\"{% if not transcription_notice %} style=\"display:none;\"{% endif %}>{{ transcription_notice }}</div>
   <div class=\"control-bar\">
     <div>
       <span class=\"badge\">静音阈值 {{ silence }} dB</span>
@@ -152,6 +160,16 @@ const tableBody = document.getElementById('segments');
 const messages = document.getElementById('messages');
 const toggleAll = document.getElementById('toggle-all');
 const addSelectedBtn = document.getElementById('add-selected');
+const audioNameEl = document.getElementById('audio-name');
+const audioDurationEl = document.getElementById('audio-duration');
+const audioPathInput = document.getElementById('audio-path');
+const noCacheCheckbox = document.getElementById('no-cache');
+const loadAudioBtn = document.getElementById('load-audio');
+const transcriptionNoticeEl = document.getElementById('transcription-notice');
+
+if (addSelectedBtn) {
+  addSelectedBtn.disabled = true;
+}
 
 function showMessage(text, type = 'info') {
   const colors = { info: '#2f5fbf', success: '#2e8547', error: '#c0392b' };
@@ -162,11 +180,14 @@ function showMessage(text, type = 'info') {
 async function loadSegments() {
   const resp = await fetch('/api/segments');
   if (!resp.ok) {
-    showMessage('无法获取分段信息', 'error');
-    return;
+    const text = await resp.text();
+    throw new Error(text || '无法获取分段信息');
   }
   const data = await resp.json();
   tableBody.innerHTML = '';
+  if (toggleAll) {
+    toggleAll.checked = false;
+  }
   data.forEach((seg, index) => {
     const tr = document.createElement('tr');
     tr.className = 'segment-row';
@@ -190,6 +211,38 @@ async function loadSegments() {
     }
     tableBody.appendChild(tr);
   });
+  if (addSelectedBtn) {
+    addSelectedBtn.disabled = !data.length;
+  }
+  return data;
+}
+
+async function loadAppState() {
+  const resp = await fetch('/api/app_state');
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(text || '无法获取工具状态');
+  }
+  const data = await resp.json();
+  if (audioNameEl) {
+    audioNameEl.textContent = data.audio_name || '未选择音频';
+  }
+  if (audioDurationEl) {
+    audioDurationEl.textContent = data.duration_label || '00:00.000';
+  }
+  if (audioPathInput && typeof data.audio_path === 'string') {
+    audioPathInput.value = data.audio_path;
+  }
+  if (transcriptionNoticeEl) {
+    if (data.transcription_notice) {
+      transcriptionNoticeEl.textContent = data.transcription_notice;
+      transcriptionNoticeEl.style.display = '';
+    } else {
+      transcriptionNoticeEl.textContent = '';
+      transcriptionNoticeEl.style.display = 'none';
+    }
+  }
+  return data;
 }
 
 tableBody.addEventListener('click', (event) => {
@@ -266,7 +319,56 @@ addSelectedBtn.addEventListener('click', async () => {
   }
 });
 
-loadSegments().catch(() => showMessage('初始化失败，请检查服务器日志。', 'error'));
+if (loadAudioBtn) {
+  loadAudioBtn.addEventListener('click', async () => {
+    if (!audioPathInput) {
+      return;
+    }
+    const path = audioPathInput.value.trim();
+    if (!path) {
+      showMessage('请先输入音频文件路径。', 'info');
+      return;
+    }
+    loadAudioBtn.disabled = true;
+    if (addSelectedBtn) {
+      addSelectedBtn.disabled = true;
+    }
+    tableBody.innerHTML = '';
+    showMessage('正在加载音频，请稍候…');
+    try {
+      const resp = await fetch('/api/load_audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio: path,
+          no_cache: noCacheCheckbox ? noCacheCheckbox.checked : false,
+        }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || '请求失败');
+      }
+      await loadAppState();
+      await loadSegments();
+      showMessage('音频加载完成，可以开始筛选。', 'success');
+    } catch (error) {
+      showMessage(`加载音频失败：${error}`, 'error');
+    } finally {
+      loadAudioBtn.disabled = false;
+    }
+  });
+}
+
+async function init() {
+  try {
+    await loadAppState();
+    await loadSegments();
+  } catch (error) {
+    showMessage(`初始化失败：${error}`, 'error');
+  }
+}
+
+init();
 </script>
 </body>
 </html>"""
@@ -291,7 +393,7 @@ def ffprobe_duration(path: Path) -> float:
         raise RuntimeError(f"无法解析音频时长：{text}") from exc
 
 
-def detect_segments(path: Path) -> List[Segment]:
+def detect_segments(path: Path, duration: float) -> List[Segment]:
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -326,8 +428,6 @@ def detect_segments(path: Path) -> List[Segment]:
     segments: List[Segment] = []
     current_start = 0.0
     ident_counter = 1
-    duration = AUDIO_DURATION
-
     for event_type, stamp in silence_events:
         if event_type == "start":
             segment_end = stamp
@@ -485,13 +585,20 @@ def build_note_identifiers(start: float, end: float) -> Tuple[int, str, str]:
 
 @app.route("/")
 def index() -> str:
+    with SEGMENT_LOCK:
+        loaded = AUDIO_LOADED
+        audio_name = AUDIO_PATH.name if loaded else "未选择音频"
+        duration_label = format_seconds_label(AUDIO_DURATION) if loaded else "00:00.000"
+        transcription_notice = TRANSCRIPTION_NOTICE if loaded else ""
+        audio_path = str(AUDIO_PATH) if loaded else ""
     return render_template_string(
         INDEX_HTML,
-        audio_name=AUDIO_PATH.name,
-        duration_label=format_seconds_label(AUDIO_DURATION),
+        audio_name=audio_name,
+        duration_label=duration_label,
+        audio_path=audio_path,
         silence=SILENCE_THRESHOLD_DB,
         min_segment=MIN_SEGMENT_DURATION,
-        transcription_notice=TRANSCRIPTION_NOTICE,
+        transcription_notice=transcription_notice,
     )
 
 
@@ -510,6 +617,65 @@ def api_segments():
             for seg in SEGMENTS
         ]
     return jsonify(payload)
+
+
+@app.route("/api/app_state")
+def api_app_state():
+    with SEGMENT_LOCK:
+        loaded = AUDIO_LOADED
+        audio_path = str(AUDIO_PATH) if loaded else ""
+        audio_name = AUDIO_PATH.name if loaded else ""
+        duration_label = format_seconds_label(AUDIO_DURATION) if loaded else "00:00.000"
+        notice = TRANSCRIPTION_NOTICE if loaded else ""
+        segment_count = len(SEGMENTS)
+    return jsonify(
+        {
+            "loaded": loaded,
+            "audio_path": audio_path,
+            "audio_name": audio_name,
+            "duration_label": duration_label,
+            "transcription_notice": notice,
+            "segment_count": segment_count,
+            "silence": SILENCE_THRESHOLD_DB,
+            "min_segment": MIN_SEGMENT_DURATION,
+        }
+    )
+
+
+@app.route("/api/load_audio", methods=["POST"])
+def api_load_audio():
+    try:
+        payload = request.get_json(force=True)
+    except Exception:
+        return make_response("Invalid JSON body", 400)
+
+    audio_value = payload.get("audio") if isinstance(payload, dict) else None
+    if not isinstance(audio_value, str) or not audio_value.strip():
+        return make_response("`audio` 字段必须是字符串路径", 400)
+
+    no_cache = bool(payload.get("no_cache")) if isinstance(payload, dict) else False
+    candidate_path = Path(audio_value.strip())
+
+    try:
+        load_audio_file(candidate_path, use_cache=not no_cache)
+    except FileNotFoundError as exc:
+        missing = getattr(exc, "filename", str(candidate_path.expanduser()))
+        return make_response(f"找不到音频文件：{missing}", 404)
+    except RuntimeError as exc:
+        return make_response(str(exc), 400)
+    except Exception as exc:
+        return make_response(str(exc), 500)
+
+    with SEGMENT_LOCK:
+        response = {
+            "audio_name": AUDIO_PATH.name,
+            "audio_path": str(AUDIO_PATH),
+            "duration_label": format_seconds_label(AUDIO_DURATION),
+            "segments": len(SEGMENTS),
+            "transcription_notice": TRANSCRIPTION_NOTICE,
+        }
+
+    return jsonify(response)
 
 
 @app.route("/api/segment_audio/<segment_id>")
@@ -616,6 +782,61 @@ def transcribe_cache_path(audio_path: Path) -> Path:
     return cache_dir / f"{digest}.pkl"
 
 
+def load_audio_file(audio_path: Path, *, use_cache: bool = True) -> None:
+    global AUDIO_PATH, SEGMENTS, AUDIO_DURATION, TRANSCRIPTION_NOTICE, AUDIO_LOADED
+
+    resolved = audio_path.expanduser().resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(resolved)
+
+    try:
+        ensure_listening_model()
+    except AnkiError as exc:
+        print(f"初始化 Anki 模板失败：{exc}")
+
+    try:
+        audio_duration = ffprobe_duration(resolved)
+    except Exception as exc:
+        raise RuntimeError(f"无法读取音频时长：{exc}") from exc
+
+    try:
+        segments = detect_segments(resolved, audio_duration)
+    except subprocess.CalledProcessError as exc:
+        err_text = exc.stderr.decode("utf-8", errors="ignore") if getattr(exc, "stderr", None) else str(exc)
+        raise RuntimeError(f"静音检测失败，请确认已安装 ffmpeg。错误：{err_text}") from exc
+
+    notice = ""
+    transcript_chunks: List[Dict[str, Any]] = []
+    if whisper is None:
+        notice = "未安装 whisper 库，文本需手动填写。"
+    else:
+        try:
+            cache_path = transcribe_cache_path(resolved)
+            if use_cache and cache_path.exists():
+                with cache_path.open("rb") as fh:
+                    transcript_chunks = pickle.load(fh)
+                notice = f"从缓存加载 Whisper ({WHISPER_MODEL_NAME}) 转写结果。"
+            else:
+                transcript_chunks = transcribe_audio_segments(resolved)
+                with cache_path.open("wb") as fh:
+                    pickle.dump(transcript_chunks, fh)
+                notice = f"已使用 Whisper ({WHISPER_MODEL_NAME}) 自动生成文本，请核对。"
+            attach_transcripts(segments, transcript_chunks)
+            if not transcript_chunks:
+                notice = "Whisper 未识别到有效文本，字段暂留空。"
+        except Exception as exc:
+            notice = f"自动转写失败：{exc}"
+
+    with SEGMENT_LOCK:
+        AUDIO_PATH = resolved
+        AUDIO_DURATION = audio_duration
+        SEGMENTS = segments
+        TRANSCRIPTION_NOTICE = notice
+        AUDIO_LOADED = True
+
+    print(f"解析完成：共识别 {len(segments)} 个候选句子。音频：{resolved}")
+
+
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CLB9 listening segment picker")
     parser.add_argument("--audio", type=Path, default=Path("/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_2_1.mp3"), help="要处理的音频文件路径")
@@ -626,51 +847,16 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
 
 
 def main(argv: Iterable[str] | None = None) -> None:
-    global AUDIO_PATH, SEGMENTS, AUDIO_DURATION, TRANSCRIPTION_NOTICE
     args = parse_args(argv or sys.argv[1:])
-    AUDIO_PATH = args.audio.expanduser().resolve()
-    if not AUDIO_PATH.exists():
-        raise SystemExit(f"找不到音频文件：{AUDIO_PATH}")
-
     try:
-        ensure_listening_model()
-    except AnkiError as exc:
-        print(f"初始化 Anki 模板失败：{exc}")
+        load_audio_file(args.audio, use_cache=not args.no_cache)
+    except FileNotFoundError as exc:
+        missing = getattr(exc, "filename", str(args.audio))
+        raise SystemExit(f"找不到音频文件：{missing}") from None
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    try:
-        AUDIO_DURATION = ffprobe_duration(AUDIO_PATH)
-    except Exception as exc:
-        raise SystemExit(f"无法读取音频时长：{exc}") from exc
-
-    try:
-        segments = detect_segments(AUDIO_PATH)
-    except subprocess.CalledProcessError as exc:
-        raise SystemExit(f"静音检测失败，请确认已安装 ffmpeg。错误：{exc.stderr.decode('utf-8', errors='ignore')}")
-
-    if whisper is None:
-        TRANSCRIPTION_NOTICE = "未安装 whisper 库，文本需手动填写。"
-    else:
-        try:
-            cache_path = transcribe_cache_path(AUDIO_PATH)
-            if not args.no_cache and cache_path.exists():
-                with cache_path.open("rb") as fh:
-                    transcript_chunks = pickle.load(fh)
-                TRANSCRIPTION_NOTICE = f"从缓存加载 Whisper ({WHISPER_MODEL_NAME}) 转写结果。"
-            else:
-                transcript_chunks = transcribe_audio_segments(AUDIO_PATH)
-                with cache_path.open("wb") as fh:
-                    pickle.dump(transcript_chunks, fh)
-                TRANSCRIPTION_NOTICE = f"已使用 Whisper ({WHISPER_MODEL_NAME}) 自动生成文本，请核对。"
-            attach_transcripts(segments, transcript_chunks)
-            if not transcript_chunks:
-                TRANSCRIPTION_NOTICE = "Whisper 未识别到有效文本，字段暂留空。"
-        except Exception as exc:
-            TRANSCRIPTION_NOTICE = f"自动转写失败：{exc}"
-
-    with SEGMENT_LOCK:
-        SEGMENTS = segments
-
-    print(f"解析完成：共识别 {len(SEGMENTS)} 个候选句子。打开 http://{args.host}:{args.port} 开始筛选。")
+    print(f"打开 http://{args.host}:{args.port} 开始筛选。")
     app.run(host=args.host, port=args.port, debug=False)
 
 

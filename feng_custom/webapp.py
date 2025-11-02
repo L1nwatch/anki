@@ -20,7 +20,8 @@ BASE_DIR = Path(__file__).parent
 
 ANKI_CONNECT = "http://127.0.0.1:8765"
 DECK_NAME = "English-CLB9"
-FRENCH_DECK_NAME = "French-NCLC 7"
+FRENCH_DECK_NAME = "French-Speaking-NCLC7"
+FRENCH_VOCAB_DECK_NAME = "French-NCLC7"
 TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()\"“”‘’]")
 SOUND_RE = re.compile(r"\[sound:(.+?)\]")
 TRANSLATE_HEADERS = {
@@ -39,6 +40,7 @@ app = Flask(
 CURRENT_CARDS: Dict[str, Optional[Dict[str, Any]]] = {
     DECK_NAME: None,
     FRENCH_DECK_NAME: None,
+    FRENCH_VOCAB_DECK_NAME: None,
 }
 
 try:
@@ -299,9 +301,23 @@ def build_french_payload(card: Dict[str, Any]) -> Dict[str, Any]:
     return {"type": "shadowing", "data": data}
 
 
+def build_french_vocab_payload(card: Dict[str, Any]) -> Dict[str, Any]:
+    fields = card.get("fields", {})
+    audio_file = extract_sound(fields.get("Audio", {}).get("value", ""))
+    data = {
+        "prompt": "请听写以下法语单词：",
+        "word": fields.get("French", {}).get("value", ""),
+        "english": fields.get("English", {}).get("value", ""),
+        "chinese": fields.get("Chinese", {}).get("value", ""),
+        "audioUrl": media_to_data_url(audio_file) if audio_file else None,
+    }
+    return {"type": "french_vocab", "data": data}
+
+
 PAYLOAD_BUILDERS = {
     DECK_NAME: build_clb9_payload,
     FRENCH_DECK_NAME: build_french_payload,
+    FRENCH_VOCAB_DECK_NAME: build_french_vocab_payload,
 }
 
 
@@ -420,6 +436,7 @@ def index():
         "home.html",
         english_deck=DECK_NAME,
         french_deck=FRENCH_DECK_NAME,
+        french_vocab_deck=FRENCH_VOCAB_DECK_NAME,
     )
 
 
@@ -513,6 +530,28 @@ def api_french_analyze():
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+
+
+@app.get("/french-vocab")
+def french_vocab_index():
+    return render_template("french_vocab.html", deck_name=FRENCH_VOCAB_DECK_NAME)
+
+
+@app.get("/api/fv/next")
+def api_french_vocab_next():
+    return handle_next(FRENCH_VOCAB_DECK_NAME)
+
+
+@app.post("/api/fv/reveal")
+def api_french_vocab_reveal():
+    return handle_reveal(FRENCH_VOCAB_DECK_NAME)
+
+
+@app.post("/api/fv/answer")
+def api_french_vocab_answer():
+    return handle_answer(FRENCH_VOCAB_DECK_NAME)
+
+
 @app.post("/api/diff")
 def api_diff():
     payload = request.get_json(force=True, silent=True) or {}

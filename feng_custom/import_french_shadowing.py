@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Import the French shadowing pack into a dedicated Anki deck."""
+"""Generate a French speaking practice deck from a custom vocabulary list."""
 from __future__ import annotations
 
 import base64
-import csv
+import random
 import re
 import subprocess
 import tempfile
@@ -17,10 +17,11 @@ import requests
 API_URL = "http://127.0.0.1:8765"
 API_VERSION = 6
 
-DECK_NAME = "French-NCLC 7"
+DECK_NAME = "French-Speaking-NCLC7"
 MODEL_NAME = "French Shadowing"
 
-CSV_PATH = Path(__file__).parent / "data" / "french_A1_to_A2_shadowing_pack.csv"
+VOCABULARY_PATH = Path(__file__).parent / "data" / "listen_cache" / "french_speaking.txt"
+TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
 FRENCH_VOICES = ["Thomas", "Amelie", "Alice", "Claire", "Aurelie"]
 ANKI_MEDIA_DIR = (
     Path.home()
@@ -184,54 +185,65 @@ def ensure_model() -> None:
   )
 
 
-def load_rows() -> List[Row]:
-  rows: List[Row] = []
-  with CSV_PATH.open(newline="", encoding="utf-8") as handle:
-    reader = csv.DictReader(handle)
-    for raw in reader:
-      tags = [
-          tag.strip()
-          for tag in (raw.get("Tags") or "").replace(";", ",").split(",")
-          if tag.strip()
-      ]
-      rows.append(
-          Row(
-              french=(raw.get("French") or "").strip(),
-              ipa=(raw.get("IPA") or "").strip(),
-              english=(raw.get("English") or "").strip(),
-              example_fr=(raw.get("Example (FR)") or "").strip(),
-              example_en=(raw.get("Example (EN)") or "").strip(),
-              tags=tags,
-          )
-      )
-  return rows
-
-
-def existing_french_notes() -> Dict[str, Dict[str, Any]]:
+def clear_deck_notes() -> int:
   ids = invoke("findNotes", query=f'deck:"{DECK_NAME}"') or []
   if not ids:
-    return {}
-  infos = invoke("notesInfo", notes=ids) or []
+    return 0
+  invoke("deleteNotes", notes=ids)
+  return len(ids)
 
-  notes: Dict[str, Dict[str, Any]] = {}
 
-  for info in infos:
-    fields = info.get("fields", {})
-    sentence_value = (fields.get("ExampleFR", {}).get("value") or "").strip()
-    if not sentence_value:
-      continue
-    key = sentence_value.lower()
-    notes[key] = {
-        "note_id": info.get("noteId"),
-        "sentence": sentence_value,
-        "french": (fields.get("French", {}).get("value") or "").strip(),
-        "ipa": (fields.get("IPA", {}).get("value") or "").strip(),
-        "audio": (fields.get("Audio", {}).get("value") or "").strip(),
-        "english": (fields.get("English", {}).get("value") or "").strip(),
-        "example_fr": (fields.get("ExampleFR", {}).get("value") or "").strip(),
-        "example_en": (fields.get("ExampleEN", {}).get("value") or "").strip(),
-    }
-  return notes
+def translate_text(text: str, target_lang: str) -> str:
+  params = {
+      "client": "gtx",
+      "sl": "fr",
+      "tl": target_lang,
+      "dt": "t",
+      "q": text,
+  }
+  try:
+    resp = requests.get(TRANSLATE_URL, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data or not data[0]:
+      return ""
+    return "".join(part[0] for part in data[0] if part and part[0])
+  except Exception:
+    return ""
+
+
+def load_vocabulary_rows() -> List[Row]:
+  sentences: List[str] = []
+  seen: set[str] = set()
+  with VOCABULARY_PATH.open(encoding="utf-8") as handle:
+    for raw in handle:
+      sentence = raw.strip()
+      if not sentence:
+        continue
+      key = sentence.lower()
+      if key in seen:
+        continue
+      seen.add(key)
+      sentences.append(sentence)
+
+  random.shuffle(sentences)
+
+  rows: List[Row] = []
+  for sentence in sentences:
+    english = translate_text(sentence, "en")
+    chinese = translate_text(sentence, "zh-CN")
+    combined = "<br>".join(part for part in (english, chinese) if part)
+    rows.append(
+        Row(
+            french=sentence,
+            ipa="",
+            english=english,
+            example_fr=sentence,
+            example_en=combined or english,
+            tags=["shadowing::vocabulary", "shadowing::speaking"],
+        )
+    )
+  return rows
 
 
 def sanitize_audio_name(text: str) -> str:
@@ -330,73 +342,29 @@ def add_new_notes(notes: List[Dict[str, Any]]) -> int:
       added += 1
   return added
 
-
-def update_existing_notes(notes: List[Dict[str, Any]]) -> int:
-  updated = 0
-  for note in notes:
-    invoke("updateNoteFields", note=note)
-    updated += 1
-  return updated
-
-
 def main() -> None:
-  if not CSV_PATH.exists():
-    raise SystemExit(f"CSV not found: {CSV_PATH}")
+  if not VOCABULARY_PATH.exists():
+    raise SystemExit(f"Vocabulary list not found: {VOCABULARY_PATH}")
   ensure_deck()
   ensure_model()
-  rows = load_rows()
+  removed = clear_deck_notes()
+  rows = load_vocabulary_rows()
   if not rows:
-    print("No rows to import.")
+    print("No vocabulary entries to import.")
     return
-  existing = existing_french_notes()
 
   new_notes: List[Dict[str, Any]] = []
-  updates: List[Dict[str, Any]] = []
 
   for row in rows:
     if not row.french:
       continue
-    sentence = row.example_fr
-    if not sentence:
-      continue
-    key = sentence.lower()
-    audio_file = generate_french_audio(sentence)
+    audio_source = row.example_fr or row.french
+    audio_file = generate_french_audio(audio_source)
     audio_field = f"[sound:{audio_file}]" if audio_file else ""
-
-    if key not in existing:
-      new_notes.append(build_note(row, audio_field))
-      continue
-
-    info = existing[key]
-    note_id = info.get("note_id")
-    if not note_id:
-      continue
-
-    fields: Dict[str, str] = {}
-
-    def maybe_update(field_name: str, new_value: str, current: str) -> None:
-      normalized_new = (new_value or "").strip()
-      if normalized_new and normalized_new != (current or ""):
-        fields[field_name] = normalized_new
-
-    maybe_update("French", row.french, info.get("french", ""))
-    maybe_update("IPA", row.ipa, info.get("ipa", ""))
-    maybe_update("English", row.english, info.get("english", ""))
-    maybe_update("ExampleFR", row.example_fr, info.get("sentence", ""))
-    maybe_update("ExampleEN", row.example_en, info.get("example_en", ""))
-    if audio_field and audio_field != info.get("audio", ""):
-      fields["Audio"] = audio_field
-
-    if fields:
-      updates.append({"id": note_id, "fields": fields})
+    new_notes.append(build_note(row, audio_field))
 
   added = add_new_notes(new_notes)
-  updated = update_existing_notes(updates) if updates else 0
-
-  if not new_notes and not updates:
-    print("所有记录均已存在且无需更新。")
-  else:
-    print(f"新增 {added} 条，更新 {updated} 条。")
+  print(f"清理 {removed} 条旧笔记，新增 {added} 条练习笔记。")
 
 
 if __name__ == "__main__":

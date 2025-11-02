@@ -15,12 +15,16 @@
 
       <section class="deck-options">
         <a class="deck-option" href="{{ url_for('english_index') }}">
-          <div class="deck-title">英语 CLB9</div>
+          <div class="deck-title">{{ english_deck }}</div>
           <div class="deck-subtitle">听力、拼写、写作综合练习</div>
         </a>
         <a class="deck-option" href="{{ url_for('french_index') }}">
-          <div class="deck-title">法语影子练习</div>
-          <div class="deck-subtitle">A1-A2 词汇跟读与发音评分</div>
+          <div class="deck-title">{{ french_deck }}</div>
+          <div class="deck-subtitle">A1-A2 影子跟读与发音评分</div>
+        </a>
+        <a class="deck-option" href="{{ url_for('french_vocab_index') }}">
+          <div class="deck-title">{{ french_vocab_deck }}</div>
+          <div class="deck-subtitle">法语听写 + 英/中 释义提示</div>
         </a>
       </section>
 

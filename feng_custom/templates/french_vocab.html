@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>French Vocabulary Practice</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>{{ deck_name }}</h1>
+        <p class="nav-link"><a href="/">返回选择界面</a></p>
+      </header>
+
+      <div class="card">
+        <div id="status">加载中…</div>
+
+        <div class="section-title hidden" id="prompt-title">提示</div>
+        <div id="prompt" class="hidden"></div>
+
+        <div id="writing-original" class="hidden">
+          <div class="section-title">参考句子</div>
+          <div class="content"></div>
+        </div>
+
+        <div id="audio-wrapper" class="hidden">
+          <audio id="audio-player" controls preload="auto"></audio>
+        </div>
+
+        <div id="listen-input-wrapper" class="hidden">
+          <textarea id="listen-input" rows="4" placeholder="请在此输入你听到的内容"></textarea>
+        </div>
+
+        <div id="word-input-wrapper" class="hidden">
+          <input id="word-input" type="text" placeholder="请输入单词拼写" autocomplete="off" />
+        </div>
+
+        <div id="writing-input-wrapper" class="hidden">
+          <textarea id="writing-input" rows="6" placeholder="请写下你的答案（可覆盖原句）"></textarea>
+        </div>
+
+        <div class="answer-control">
+          <button id="reveal-btn" type="button" disabled>显示答案</button>
+        </div>
+
+        <div id="answer-box" class="hidden"></div>
+
+        <div id="ease-buttons" class="hidden"></div>
+      </div>
+
+      <footer>
+        服务器运行于本机，通过 AnkiConnect 访问牌组数据。
+      </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='french_vocab.js') }}" defer></script>
+  </body>
+</html>
