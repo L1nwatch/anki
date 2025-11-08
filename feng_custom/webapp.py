@@ -11,18 +11,22 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, make_response, redirect, render_template, request, url_for
 
 BASE_DIR = Path(__file__).parent
 
 ANKI_CONNECT = "http://127.0.0.1:8765"
 DECK_NAME = "English-CLB9"
 FRENCH_DECK_NAME = "French-Speaking-NCLC7"
+FRENCH_DECK_NAME_YISEN = "French-NCLC7-yisen"
 FRENCH_VOCAB_DECK_NAME = "French-NCLC7"
-TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()\"“”‘’]")
+# Include œ/Œ so ligatures are preserved within tokens during diff rendering.
+TOKEN_RE = re.compile(
+    r"[A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+)?|[.,!?;:()\"“”‘’]"
+)
 SOUND_RE = re.compile(r"\[sound:(.+?)\]")
 TRANSLATE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36",
@@ -40,8 +44,88 @@ app = Flask(
 CURRENT_CARDS: Dict[str, Optional[Dict[str, Any]]] = {
     DECK_NAME: None,
     FRENCH_DECK_NAME: None,
+    FRENCH_DECK_NAME_YISEN: None,
     FRENCH_VOCAB_DECK_NAME: None,
 }
+
+COOKIE_NAME = "anki_user"
+
+USER_CONFIG: Dict[str, Dict[str, Any]] = {
+    "feng": {
+        "display_name": "Feng",
+        "home_options": [
+            {
+                "endpoint": "english_index",
+                "deck_name": DECK_NAME,
+                "title": DECK_NAME,
+                "subtitle": "听力、拼写、写作综合练习",
+            },
+            {
+                "endpoint": "french_index",
+                "deck_name": FRENCH_DECK_NAME,
+                "title": FRENCH_DECK_NAME,
+                "subtitle": "A1-A2 影子跟读与发音评分",
+            },
+            {
+                "endpoint": "french_vocab_index",
+                "deck_name": FRENCH_VOCAB_DECK_NAME,
+                "title": FRENCH_VOCAB_DECK_NAME,
+                "subtitle": "法语听写 + 英/中 释义提示",
+            },
+        ],
+        "route_decks": {
+            "english": DECK_NAME,
+            "french": FRENCH_DECK_NAME,
+            "french_vocab": FRENCH_VOCAB_DECK_NAME,
+        },
+    },
+    "yisen": {
+        "display_name": "Yisen",
+        "home_options": [
+            {
+                "endpoint": "french_vocab_index",
+                "deck_name": FRENCH_DECK_NAME_YISEN,
+                "title": FRENCH_DECK_NAME_YISEN,
+                "subtitle": "法语听写 + 释义提示",
+            }
+        ],
+        "route_decks": {
+            "french_vocab": FRENCH_DECK_NAME_YISEN,
+        },
+    },
+}
+
+
+def get_current_user() -> Optional[str]:
+    username = request.cookies.get(COOKIE_NAME, "").strip().lower()
+    if not username:
+        return None
+    if username not in USER_CONFIG:
+        return None
+    return username
+
+
+def get_user_config(username: str) -> Dict[str, Any]:
+    return USER_CONFIG.get(username, {})
+
+
+def resolve_user_deck(route_key: str) -> Optional[str]:
+    user = get_current_user()
+    if not user:
+        return None
+    config = get_user_config(user)
+    route_map: Dict[str, str] = config.get("route_decks", {})
+    return route_map.get(route_key)
+
+
+def get_authenticated_user() -> Optional[Tuple[str, Dict[str, Any]]]:
+    user = get_current_user()
+    if not user:
+        return None
+    config = get_user_config(user)
+    if not config:
+        return None
+    return user, config
 
 try:
     import whisper  # type: ignore
@@ -317,6 +401,7 @@ def build_french_vocab_payload(card: Dict[str, Any]) -> Dict[str, Any]:
 PAYLOAD_BUILDERS = {
     DECK_NAME: build_clb9_payload,
     FRENCH_DECK_NAME: build_french_payload,
+    FRENCH_DECK_NAME_YISEN: build_french_vocab_payload,
     FRENCH_VOCAB_DECK_NAME: build_french_vocab_payload,
 }
 
@@ -432,63 +517,142 @@ def handle_answer(deck_name: str) -> Any:
 
 @app.get("/")
 def index():
-    english_counts = deck_counts(DECK_NAME)
-    french_counts = deck_counts(FRENCH_DECK_NAME)
-    french_vocab_counts = deck_counts(FRENCH_VOCAB_DECK_NAME)
+    user_info = get_authenticated_user()
+    if not user_info:
+        return render_template("user_select.html", error=None, entered="")
+
+    username, config = user_info
+    deck_options = []
+    for option in config.get("home_options", []):
+        deck_name = option.get("deck_name", "")
+        counts = deck_counts(deck_name)
+        deck_options.append(
+            {
+                "endpoint": option.get("endpoint"),
+                "deck_name": deck_name,
+                "title": option.get("title", deck_name),
+                "subtitle": option.get("subtitle", ""),
+                "counts": counts,
+            }
+        )
+
     return render_template(
         "home.html",
-        english_deck=DECK_NAME,
-        english_counts=english_counts,
-        french_deck=FRENCH_DECK_NAME,
-        french_counts=french_counts,
-        french_vocab_deck=FRENCH_VOCAB_DECK_NAME,
-        french_vocab_counts=french_vocab_counts,
+        deck_options=deck_options,
+        username=username,
+        display_name=config.get("display_name", username),
     )
+
+
+@app.post("/select-user")
+def select_user():
+    raw_username = request.form.get("username", "")
+    username = raw_username.strip().lower()
+    if username in USER_CONFIG:
+        response = make_response(redirect(url_for("index")))
+        # Store the cookie for roughly 90 days to avoid frequent prompts.
+        response.set_cookie(
+            COOKIE_NAME,
+            username,
+            max_age=60 * 60 * 24 * 90,
+            samesite="Lax",
+            httponly=True,
+        )
+        return response
+
+    error = "未知用户，请输入已配置的名称。"
+    return render_template("user_select.html", error=error, entered=raw_username)
 
 
 @app.get("/english")
 def english_index():
-    return render_template("index.html", deck_name=DECK_NAME)
+    user_info = get_authenticated_user()
+    if not user_info:
+        return redirect(url_for("index"))
+    username, config = user_info
+    deck_name = resolve_user_deck("english")
+    if not deck_name:
+        return redirect(url_for("index"))
+    return render_template(
+        "index.html",
+        deck_name=deck_name,
+        username=username,
+        display_name=config.get("display_name", username),
+    )
 
 
 @app.get("/api/next")
 def api_next():
-    return handle_next(DECK_NAME)
+    deck_name = resolve_user_deck("english")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_next(deck_name)
 
 
 @app.post("/api/reveal")
 def api_reveal():
-    return handle_reveal(DECK_NAME)
+    deck_name = resolve_user_deck("english")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_reveal(deck_name)
 
 
 @app.post("/api/answer")
 def api_answer():
-    return handle_answer(DECK_NAME)
+    deck_name = resolve_user_deck("english")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_answer(deck_name)
 
 
 @app.get("/french")
 def french_index():
-    return render_template("french.html", deck_name=FRENCH_DECK_NAME)
+    user_info = get_authenticated_user()
+    if not user_info:
+        return redirect(url_for("index"))
+    username, config = user_info
+    deck_name = resolve_user_deck("french")
+    if not deck_name:
+        return redirect(url_for("index"))
+    return render_template(
+        "french.html",
+        deck_name=deck_name,
+        username=username,
+        display_name=config.get("display_name", username),
+    )
 
 
 @app.get("/api/fr/next")
 def api_french_next():
-    return handle_next(FRENCH_DECK_NAME)
+    deck_name = resolve_user_deck("french")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_next(deck_name)
 
 
 @app.post("/api/fr/reveal")
 def api_french_reveal():
-    return handle_reveal(FRENCH_DECK_NAME)
+    deck_name = resolve_user_deck("french")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_reveal(deck_name)
 
 
 @app.post("/api/fr/answer")
 def api_french_answer():
-    return handle_answer(FRENCH_DECK_NAME)
+    deck_name = resolve_user_deck("french")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_answer(deck_name)
 
 
 @app.post("/api/fr/analyze")
 def api_french_analyze():
-    state = current_card_state(FRENCH_DECK_NAME)
+    deck_name = resolve_user_deck("french")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+
+    state = current_card_state(deck_name)
     if not state or not state.get("cardId"):
         return jsonify({"error": "no active card"}), 409
 
@@ -511,7 +675,7 @@ def api_french_analyze():
             temp_path = Path(handle.name)
 
         try:
-            card = ensure_review_ready(FRENCH_DECK_NAME)
+            card = ensure_review_ready(deck_name)
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -540,22 +704,43 @@ def api_french_analyze():
 
 @app.get("/french-vocab")
 def french_vocab_index():
-    return render_template("french_vocab.html", deck_name=FRENCH_VOCAB_DECK_NAME)
+    user_info = get_authenticated_user()
+    if not user_info:
+        return redirect(url_for("index"))
+    username, config = user_info
+    deck_name = resolve_user_deck("french_vocab")
+    if not deck_name:
+        return redirect(url_for("index"))
+    return render_template(
+        "french_vocab.html",
+        deck_name=deck_name,
+        username=username,
+        display_name=config.get("display_name", username),
+    )
 
 
 @app.get("/api/fv/next")
 def api_french_vocab_next():
-    return handle_next(FRENCH_VOCAB_DECK_NAME)
+    deck_name = resolve_user_deck("french_vocab")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_next(deck_name)
 
 
 @app.post("/api/fv/reveal")
 def api_french_vocab_reveal():
-    return handle_reveal(FRENCH_VOCAB_DECK_NAME)
+    deck_name = resolve_user_deck("french_vocab")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_reveal(deck_name)
 
 
 @app.post("/api/fv/answer")
 def api_french_vocab_answer():
-    return handle_answer(FRENCH_VOCAB_DECK_NAME)
+    deck_name = resolve_user_deck("french_vocab")
+    if not deck_name:
+        return jsonify({"error": "用户未被授权访问该牌组"}), 403
+    return handle_answer(deck_name)
 
 
 @app.post("/api/diff")
