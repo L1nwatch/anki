@@ -241,13 +241,37 @@ def deck_counts(deck_name: str) -> Dict[str, int]:
     names = invoke("deckNamesAndIds") or {}
     deck_id = names.get(deck_name)
     if deck_id is None:
-        return {"due": 0, "new": 0, "learning": 0}
+        return {
+            "due": 0,
+            "new": 0,
+            "learning": 0,
+            "words_total": 0,
+            "words_learned": 0,
+            "words_remaining": 0,
+        }
     stats_map = invoke("getDeckStats", decks=[deck_name]) or {}
     stats = stats_map.get(str(deck_id), {})
+    safe_deck = deck_name.replace('"', '\\"')
+
+    def _note_count(extra_query: str = "") -> int:
+        query = f'deck:"{safe_deck}" {extra_query}'.strip()
+        try:
+            notes = invoke("findNotes", query=query) or []
+        except RuntimeError:
+            return 0
+        return len(notes)
+
+    total_notes = _note_count()
+    remaining_notes = _note_count("is:new")
+    learned_notes = max(total_notes - remaining_notes, 0)
+
     return {
         "due": stats.get("review_count", 0),
         "new": stats.get("new_count", 0),
         "learning": stats.get("learn_count", 0),
+        "words_total": total_notes,
+        "words_learned": learned_notes,
+        "words_remaining": remaining_notes,
     }
 
 

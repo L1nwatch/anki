@@ -2,10 +2,12 @@
 """Add French vocabulary notes into the French-NCLC7 Anki deck."""
 from __future__ import annotations
 
+import argparse
 import base64
 import random
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -13,11 +15,13 @@ import requests
 
 API_URL = "http://127.0.0.1:8765"
 API_VERSION = 6
-DECK_NAME = "French-NCLC7"
+DECK_NAME = "French-NCLC7-yisen"
 MODEL_NAME = "French Vocabulary"
 TEMPLATE_NAME = "Vocabulary"
+GOOGLE_TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
+MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
 VOCAB_PATH = Path(
-    "/Users/fenglin/Desktop/code/anki/feng_custom/data/listen_cache/french_vocabulary.txt"
+    "/Users/fenglin/Desktop/code/anki/feng_custom/data/listen_cache/french_vocabulary-20251109.txt"
 )
 
 ANKI_MEDIA_DIR = (
@@ -30,6 +34,14 @@ ANKI_MEDIA_DIR = (
 )
 FRENCH_VOICES = ["Thomas", "Amelie", "Aurelie", "Claire", "Alice"]
 DEFAULT_TAGS = ["French", "Vocabulary", "NCLC7"]
+TRANSLATE_HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+
+@dataclass
+class VocabEntry:
+    french: str
+    english: str
+    chinese: str
 
 CSS = """
 .card {
@@ -206,7 +218,26 @@ def ensure_audio(word: str) -> str:
         return ""
 
 
-def translate(word: str, target_lang: str) -> str:
+def _translate_mymemory(word: str, target_lang: str) -> str:
+    params = {"q": word, "langpair": f"fr|{target_lang}"}
+    resp = requests.get(
+        MYMEMORY_TRANSLATE_URL,
+        params=params,
+        timeout=10,
+        headers=TRANSLATE_HEADERS,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    result = (data.get("responseData") or {}).get("translatedText", "")
+    if result:
+        return result
+    matches = data.get("matches") or []
+    if matches:
+        return matches[0].get("translation", "") or ""
+    return ""
+
+
+def _translate_google(word: str, target_lang: str) -> str:
     params = {
         "client": "gtx",
         "sl": "fr",
@@ -214,18 +245,29 @@ def translate(word: str, target_lang: str) -> str:
         "dt": "t",
         "q": word,
     }
-    try:
-        resp = requests.get(
-            "https://translate.googleapis.com/translate_a/single",
-            params=params,
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return "".join(part[0] for part in data[0]) if data else ""
-    except Exception:
+    resp = requests.get(
+        GOOGLE_TRANSLATE_URL,
+        params=params,
+        timeout=10,
+        headers=TRANSLATE_HEADERS,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return "".join(part[0] for part in data[0]) if data else ""
+
+
+def translate(word: str, target_lang: str) -> str:
+    text = word.strip()
+    if not text:
         return ""
+    for translator in (_translate_mymemory, _translate_google):
+        try:
+            result = translator(text, target_lang).strip()
+            if result:
+                return result
+        except Exception:
+            continue
+    return ""
 
 
 def find_existing_notes(word: str) -> List[int]:
@@ -246,22 +288,35 @@ def find_existing_notes(word: str) -> List[int]:
     return out
 
 
-def load_vocabulary(path: Path) -> List[str]:
+def load_vocabulary(path: Path) -> List[VocabEntry]:
     if not path.exists():
         raise FileNotFoundError(f"Vocabulary file not found: {path}")
     seen = set()
-    words: List[str] = []
+    entries: List[VocabEntry] = []
     with path.open(encoding="utf-8") as handle:
         for raw in handle:
-            word = raw.strip()
-            if not word or word.startswith("#"):
+            line = raw.strip()
+            if not line or line.startswith("#"):
                 continue
-            if word in seen:
+            french = ""
+            english = ""
+            chinese = ""
+            if "=" in line:
+                parts = [part.strip() for part in line.split("=", 2)]
+                if parts:
+                    french = parts[0]
+                if len(parts) > 1:
+                    english = parts[1]
+                if len(parts) > 2:
+                    chinese = parts[2]
+            else:
+                french = line
+            if not french or french in seen:
                 continue
-            seen.add(word)
-            words.append(word)
-    random.shuffle(words)
-    return words
+            seen.add(french)
+            entries.append(VocabEntry(french=french, english=english, chinese=chinese))
+    random.shuffle(entries)
+    return entries
 
 
 def build_note_payload(word: str, english: str, chinese: str, audio_file: str) -> dict:
@@ -286,18 +341,19 @@ def build_note_payload(word: str, english: str, chinese: str, audio_file: str) -
     }
 
 
-def ensure_notes(words: Iterable[str]) -> Tuple[int, int]:
+def ensure_notes(entries: Iterable[VocabEntry]) -> Tuple[int, int]:
     created = 0
     skipped = 0
-    for word in words:
+    for entry in entries:
+        word = entry.french
         existing = find_existing_notes(word)
         if existing:
             print(f"已存在：{word}（跳过 {len(existing)} 条）")
             skipped += 1
             continue
 
-        english = translate(word, "en")
-        chinese = translate(word, "zh-CN")
+        english = entry.english or translate(word, "en")
+        chinese = entry.chinese or translate(word, "zh-CN")
         audio = ensure_audio(word)
         payload = build_note_payload(word, english, chinese, audio)
         invoke("addNotes", notes=[payload])
@@ -307,10 +363,28 @@ def ensure_notes(words: Iterable[str]) -> Tuple[int, int]:
 
 
 def main() -> None:
+    global DECK_NAME
+    parser = argparse.ArgumentParser(description="Add French vocabulary to Anki decks.")
+    parser.add_argument(
+        "--deck",
+        default=DECK_NAME,
+        help="Target deck name (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--vocab-path",
+        default=str(VOCAB_PATH),
+        help="Path to the vocabulary list (default: %(default)s)",
+    )
+    args = parser.parse_args()
+
+    DECK_NAME = args.deck
+
+    vocab_path = Path(args.vocab_path).expanduser()
+
     ensure_deck(DECK_NAME)
     ensure_model()
-    words = load_vocabulary(VOCAB_PATH)
-    created, skipped = ensure_notes(words)
+    entries = load_vocabulary(vocab_path)
+    created, skipped = ensure_notes(entries)
     print(f"完成：新增 {created} 条，跳过 {skipped} 条。")
 
 

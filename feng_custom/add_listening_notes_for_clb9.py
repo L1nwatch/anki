@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
+import math
 import os
 import pickle
+import re
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,11 +45,12 @@ try:
 except ImportError:  # pragma: no cover
     whisper = None  # type: ignore
 
-SILENCE_THRESHOLD_DB = -38.0
-MIN_SILENCE_DURATION = 0.45
-MIN_SEGMENT_DURATION = 1.2
+SILENCE_THRESHOLD_DB = -41.0
+MIN_SILENCE_DURATION = 0.38
+MIN_SEGMENT_DURATION = 1.05
 DEFAULT_PROMPT = "请听写以下音频内容："
 DEFAULT_TAGS = ["CLB9", "Listening", "ManualPick"]
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -90,14 +95,93 @@ th, td { padding: 8px; border-bottom: 1px solid #d7e3ff; text-align: left; font-
 button { padding: 6px 16px; border-radius: 6px; border: none; background: #3c6ef7; color: white; cursor: pointer; }
 button:disabled { background: #99b3ff; cursor: not-allowed; }
 .time-input { width: 84px; text-align: center; padding: 4px 6px; border: 1px solid #c5d6f2; border-radius: 6px; box-sizing: border-box; font-size: 13px; }
+.time-input[readonly] { background: #f4f6fb; color: #5a6b8a; cursor: not-allowed; border-style: dashed; }
 .time-input:focus { outline: none; border-color: #6f8de8; box-shadow: 0 0 0 2px rgba(63,105,224,0.15); }
 textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-radius: 6px; box-sizing: border-box; font-size: 14px; resize: vertical; min-height: 110px; line-height: 1.5; }
 .segment-row { background: #fff; }
+.manual-row {
+  background: #fff9ec;
+  border-left: 3px solid #f3a949;
+}
+.manual-label {
+  font-weight: 600;
+  color: #d47a0c;
+}
+.hide-cell { text-align: center; }
+.hide-btn,
+.restore-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #c5d6f2;
+  border-radius: 999px;
+  background: #edf1fb;
+  color: #33415f;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hide-btn:hover,
+.restore-btn:hover {
+  background: #dfe7ff;
+}
+.segment-row.is-hidden { display: none; }
+.hidden-placeholder {
+  background: #eef2fb;
+  font-style: italic;
+}
+.hidden-placeholder .placeholder-cell {
+  color: #4b5c7b;
+  padding-left: 12px;
+}
+.hidden-panel {
+  margin-top: 12px;
+  border: 1px dashed #c5d6f2;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #f8f9ff;
+}
+.hidden-panel summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #42527a;
+}
+.hidden-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hidden-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0e7ff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: #3a4466;
+}
+.hidden-item .info {
+  display: flex;
+  flex-direction: column;
+}
 .notice { color: #3c6ef7; font-size: 14px; margin: 12px 0; }
 #messages { margin-top: 12px; font-size: 14px; }
 .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; background: #f0f4ff; color: #3c4c86; font-size: 12px; margin-right: 6px; }
 .control-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.checkbox-cell { text-align: center; }
+.control-actions { display: flex; gap: 8px; align-items: center; }
+#add-manual-row {
+  background: #fef4d9;
+  color: #8a5a00;
+  border: 1px solid #f0c27b;
+}
+#add-manual-row:hover {
+  background: #fde8b3;
+}
+  .checkbox-cell { text-align: center; }
 .index-cell { text-align: center; font-weight: 600; color: #40507a; }
 .time-cell { white-space: nowrap; }
 .duration-cell { width: 90px; color: #516a9e; }
@@ -110,6 +194,10 @@ textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-ra
 .audio-bar input[type="text"] { flex: 1; padding: 8px 12px; border: 1px solid #c5d6f2; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
 .audio-bar input[type="text"]:focus { outline: none; border-color: #6f8de8; box-shadow: 0 0 0 2px rgba(63,105,224,0.15); }
 .audio-bar label { font-size: 12px; color: #516a9e; display: flex; align-items: center; gap: 6px; }
+.progress-wrapper { display: none; margin: 14px 0; }
+.progress-bar { height: 6px; border-radius: 999px; background: #d7e3ff; overflow: hidden; position: relative; }
+.progress-bar-inner { width: 0%; height: 100%; background: linear-gradient(90deg, #3c6ef7 0%, #5c8aff 100%); transition: width 0.25s ease; }
+.progress-status { margin-top: 6px; font-size: 12px; color: #516a9e; }
 </style>
 </head>
 <body>
@@ -122,18 +210,26 @@ textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-ra
   </div>
   <div class=\"notice\">当前音频：<strong id=\"audio-name\">{{ audio_name }}</strong>（总时长：<span id=\"audio-duration\">{{ duration_label }}</span>）</div>
   <div class=\"notice\">步骤：1) 试听并微调起止时间  2) 核对自动转写文本  3) 选择想要导入的句子并点击“添加到 Anki”</div>
+  <div class=\"progress-wrapper\" id=\"progress-wrapper\">
+    <div class=\"progress-bar\"><div class=\"progress-bar-inner\" id=\"progress-bar-inner\"></div></div>
+    <div class=\"progress-status\" id=\"progress-status\">正在准备音频…</div>
+  </div>
   <div class=\"transcript-note\" id=\"transcription-notice\"{% if not transcription_notice %} style=\"display:none;\"{% endif %}>{{ transcription_notice }}</div>
   <div class=\"control-bar\">
     <div>
       <span class=\"badge\">静音阈值 {{ silence }} dB</span>
       <span class=\"badge\">最短段长 {{ min_segment }} s</span>
     </div>
-    <button id=\"add-selected\">添加到 Anki</button>
+    <div class=\"control-actions\">
+      <button id=\"add-manual-row\" type=\"button\">+ 自定义行</button>
+      <button id=\"add-selected\">添加到 Anki</button>
+    </div>
   </div>
   <table>
     <colgroup>
       <col style="width:40px">
       <col style="width:52px">
+      <col style="width:72px">
       <col style="width:120px">
       <col style="width:120px">
       <col style="width:110px">
@@ -144,6 +240,7 @@ textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-ra
       <tr>
         <th class=\"checkbox-cell\"><input type=\"checkbox\" id=\"toggle-all\"></th>
         <th>序号</th>
+        <th>隐藏</th>
         <th>开始 (秒)</th>
         <th>结束 (秒)</th>
         <th>时长</th>
@@ -153,6 +250,10 @@ textarea { width: 100%; padding: 10px 12px; border: 1px solid #c5d6f2; border-ra
     </thead>
     <tbody id=\"segments\"></tbody>
   </table>
+  <details id=\"hidden-panel\" class=\"hidden-panel\" style=\"display:none;\">
+    <summary>已隐藏 <span id=\"hidden-count\">0</span> 行</summary>
+    <div id=\"hidden-list\"></div>
+  </details>
   <div id=\"messages\"></div>
 </section>
 <script>
@@ -160,21 +261,282 @@ const tableBody = document.getElementById('segments');
 const messages = document.getElementById('messages');
 const toggleAll = document.getElementById('toggle-all');
 const addSelectedBtn = document.getElementById('add-selected');
+const addManualBtn = document.getElementById('add-manual-row');
 const audioNameEl = document.getElementById('audio-name');
 const audioDurationEl = document.getElementById('audio-duration');
 const audioPathInput = document.getElementById('audio-path');
 const noCacheCheckbox = document.getElementById('no-cache');
 const loadAudioBtn = document.getElementById('load-audio');
 const transcriptionNoticeEl = document.getElementById('transcription-notice');
+const progressWrapper = document.getElementById('progress-wrapper');
+const progressBarInner = document.getElementById('progress-bar-inner');
+const progressStatus = document.getElementById('progress-status');
+let progressTimer = null;
+let progressValue = 0;
+const MANUAL_SEGMENT_ID = '__manual__';
+const hiddenPanel = document.getElementById('hidden-panel');
+const hiddenCountEl = document.getElementById('hidden-count');
+const hiddenList = document.getElementById('hidden-list');
+const hiddenRows = new Map();
+let manualRowCounter = 0;
+
+function setProgress(value, text) {
+  if (progressBarInner) {
+    const clamped = Math.max(0, Math.min(100, value));
+    progressBarInner.style.width = `${clamped}%`;
+  }
+  if (progressStatus && typeof text === 'string') {
+    progressStatus.textContent = text;
+  }
+}
+
+function stopProgress() {
+  if (progressTimer) {
+    window.clearInterval(progressTimer);
+    progressTimer = null;
+  }
+}
+
+function hideProgress(delay = 600) {
+  if (!progressWrapper) {
+    return;
+  }
+  window.setTimeout(() => {
+    progressWrapper.style.display = 'none';
+    setProgress(0, '正在准备音频…');
+  }, delay);
+}
+
+function startProgress() {
+  if (!progressWrapper) {
+    return;
+  }
+  stopProgress();
+  progressValue = 12;
+  progressWrapper.style.display = 'block';
+  setProgress(progressValue, '正在准备音频…');
+  progressTimer = window.setInterval(() => {
+    progressValue = Math.min(progressValue + Math.random() * 12, 92);
+    const label = progressValue > 50 ? '正在分析音频…' : '正在加载资源…';
+    setProgress(progressValue, label);
+  }, 480);
+}
+
+function completeProgress(text) {
+  setProgress(100, text || '音频加载完成');
+  hideProgress(640);
+}
+
+function failProgress(text) {
+  setProgress(Math.max(progressValue, 18), text || '加载音频失败');
+  hideProgress(1200);
+}
+
+function safeDecode(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return value;
+  }
+}
+
+function parseBoolFlag(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function updateUrlQuery(path, noCache, options = {}) {
+  const apply = options.apply !== undefined ? Boolean(options.apply) : true;
+  if (!window.history || !window.history.replaceState) {
+    return `${window.location.pathname}${window.location.search}`;
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (path) {
+      params.set('audio', path);
+      if (noCache) {
+        params.set('nocache', '1');
+      } else {
+        params.delete('nocache');
+      }
+    } else {
+      params.delete('audio');
+      params.delete('nocache');
+    }
+    const queryString = params.toString();
+    const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+    if (apply && newUrl !== `${window.location.pathname}${window.location.search}`) {
+      window.history.replaceState(null, document.title, newUrl);
+    }
+    return newUrl;
+  } catch (error) {
+    return `${window.location.pathname}${window.location.search}`;
+  }
+}
 
 if (addSelectedBtn) {
   addSelectedBtn.disabled = true;
+}
+
+if (addManualBtn) {
+  addManualBtn.addEventListener('click', () => {
+    addManualRow();
+  });
 }
 
 function showMessage(text, type = 'info') {
   const colors = { info: '#2f5fbf', success: '#2e8547', error: '#c0392b' };
   messages.textContent = text;
   messages.style.color = colors[type] || colors.info;
+}
+
+function resetHiddenState() {
+  hiddenRows.clear();
+  if (hiddenList) {
+    hiddenList.innerHTML = '';
+  }
+  updateHiddenPanel();
+}
+
+function updateHiddenPanel() {
+  if (!hiddenPanel) {
+    return;
+  }
+  const count = hiddenRows.size;
+  if (hiddenCountEl) {
+    hiddenCountEl.textContent = String(count);
+  }
+  if (count === 0) {
+    hiddenPanel.style.display = 'none';
+    hiddenPanel.open = false;
+  } else {
+    hiddenPanel.style.display = '';
+  }
+}
+
+function parseTimeToSeconds(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parts = trimmed.split(':');
+  let seconds = 0;
+  const maxIndex = parts.length - 1;
+  for (let i = 0; i < parts.length; i++) {
+    const piece = parts[maxIndex - i];
+    const numeric = parseFloat(piece);
+    if (Number.isNaN(numeric)) {
+      return null;
+    }
+    seconds += numeric * Math.pow(60, i);
+  }
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  return seconds;
+}
+
+function formatDurationLabel(seconds) {
+  const totalMs = Math.max(0, Math.round(seconds * 1000));
+  const minutes = Math.floor(totalMs / 60000)
+    .toString()
+    .padStart(2, '0');
+  const secs = Math.floor((totalMs % 60000) / 1000)
+    .toString()
+    .padStart(2, '0');
+  const millis = (totalMs % 1000).toString().padStart(3, '0');
+  return `${minutes}:${secs}.${millis}`;
+}
+
+function normalizeManualTimes(row) {
+  const startInput = row.querySelector('.start');
+  const endInput = row.querySelector('.end');
+  if (!startInput || !endInput) {
+    return null;
+  }
+  const startSeconds = parseTimeToSeconds(startInput.value);
+  const endSeconds = parseTimeToSeconds(endInput.value);
+  if (startSeconds === null || endSeconds === null) {
+    return null;
+  }
+  if (endSeconds <= startSeconds) {
+    return null;
+  }
+  const startValue = startSeconds.toFixed(3);
+  const endValue = endSeconds.toFixed(3);
+  startInput.value = startValue;
+  endInput.value = endValue;
+  const durationCell = row.querySelector('.duration-cell');
+  if (durationCell) {
+    durationCell.textContent = formatDurationLabel(endSeconds - startSeconds);
+  }
+  return { start: startValue, end: endValue };
+}
+
+function addManualRow() {
+  if (!tableBody) {
+    return null;
+  }
+  manualRowCounter += 1;
+  const label = `自定义${manualRowCounter}`;
+  const segmentId = `${MANUAL_SEGMENT_ID}-${manualRowCounter}`;
+  const tr = document.createElement('tr');
+  tr.dataset.segmentId = segmentId;
+  tr.dataset.manual = '1';
+  tr.dataset.segmentLabel = label;
+  tr.className = 'segment-row manual-row';
+  tr.innerHTML = `
+    <td class="checkbox-cell"><input type="checkbox" class="seg-check"></td>
+    <td class="index-cell manual-label">${label}</td>
+    <td class="hide-cell"><button type="button" class="hide-btn" aria-label="隐藏${label}" title="隐藏">×</button></td>
+    <td class="time-cell"><input type="text" class="start time-input" placeholder="开始 (秒或mm:ss)" /></td>
+    <td class="time-cell"><input type="text" class="end time-input" placeholder="结束 (秒或mm:ss)" /></td>
+    <td class="duration-cell small">--:--.---</td>
+    <td class="preview-cell">
+      <button type="button" class="preview">试听</button>
+      <audio class="player" preload="none" controls></audio>
+    </td>
+    <td class="transcript-cell"><textarea class="transcript" placeholder="请输入自定义文本"></textarea></td>
+  `;
+  if (tableBody.firstChild) {
+    tableBody.insertBefore(tr, tableBody.firstChild);
+  } else {
+    tableBody.appendChild(tr);
+  }
+  const startInput = tr.querySelector('.start');
+  if (startInput) {
+    startInput.focus();
+  }
+  return tr;
+}
+
+function addHiddenEntry(segmentId, label, start, end) {
+  if (!hiddenList) {
+    return;
+  }
+  const existing = hiddenList.querySelector(`.hidden-item[data-segment-id="${segmentId}"]`);
+  if (existing) {
+    existing.remove();
+  }
+  const item = document.createElement('div');
+  item.className = 'hidden-item';
+  item.dataset.segmentId = segmentId;
+  item.innerHTML = `
+    <div class="info">
+      <span>序号 ${label}</span>
+      <span>${start} - ${end}</span>
+    </div>
+    <button type="button" class="restore-btn" aria-label="恢复序号${label}" title="恢复">↺</button>
+  `;
+  hiddenList.appendChild(item);
 }
 
 async function loadSegments() {
@@ -185,6 +547,9 @@ async function loadSegments() {
   }
   const data = await resp.json();
   tableBody.innerHTML = '';
+  manualRowCounter = 0;
+  resetHiddenState();
+  addManualRow();
   if (toggleAll) {
     toggleAll.checked = false;
   }
@@ -192,12 +557,14 @@ async function loadSegments() {
     const tr = document.createElement('tr');
     tr.className = 'segment-row';
     tr.dataset.segmentId = seg.id;
+    tr.dataset.segmentLabel = String(index + 1);
 
     tr.innerHTML = `
       <td class="checkbox-cell"><input type="checkbox" class="seg-check"></td>
       <td class="index-cell">${index + 1}</td>
-      <td class="time-cell"><input type="text" class="start time-input" value="${seg.start}"/></td>
-      <td class="time-cell"><input type="text" class="end time-input" value="${seg.end}"/></td>
+      <td class="hide-cell"><button type="button" class="hide-btn" aria-label="隐藏这一行" title="隐藏">×</button></td>
+      <td class="time-cell"><input type="text" class="start time-input" value="${seg.start}" readonly/></td>
+      <td class="time-cell"><input type="text" class="end time-input" value="${seg.end}" readonly/></td>
       <td class="duration-cell small">${seg.duration_label}</td>
       <td class="preview-cell">
         <button type="button" class="preview">试听</button>
@@ -212,7 +579,7 @@ async function loadSegments() {
     tableBody.appendChild(tr);
   });
   if (addSelectedBtn) {
-    addSelectedBtn.disabled = !data.length;
+    addSelectedBtn.disabled = false;
   }
   return data;
 }
@@ -242,15 +609,77 @@ async function loadAppState() {
       transcriptionNoticeEl.style.display = 'none';
     }
   }
+  if (data.loaded && typeof data.audio_path === 'string' && data.audio_path) {
+    updateUrlQuery(data.audio_path, noCacheCheckbox ? noCacheCheckbox.checked : false);
+  }
   return data;
 }
 
+function hideSegmentRow(row) {
+  if (!row) {
+    return;
+  }
+  const segmentId = row.dataset.segmentId || '';
+  const label = row.dataset.segmentLabel || row.querySelector('.index-cell')?.textContent?.trim() || '—';
+  const start = row.querySelector('.start')?.value || '--';
+  const end = row.querySelector('.end')?.value || '--';
+  row.classList.add('is-hidden');
+  row.style.display = 'none';
+  const checkbox = row.querySelector('.seg-check');
+  if (checkbox) {
+    checkbox.checked = false;
+  }
+  const audio = row.querySelector('.player');
+  if (audio) {
+    audio.pause();
+  }
+  hiddenRows.set(segmentId, row);
+  addHiddenEntry(segmentId, label, start, end);
+  updateHiddenPanel();
+}
+
+function restoreFromPanel(segmentId, entryEl) {
+  const row = hiddenRows.get(segmentId);
+  if (!row) {
+    if (entryEl) {
+      entryEl.remove();
+    }
+    updateHiddenPanel();
+    return;
+  }
+  row.classList.remove('is-hidden');
+  row.style.display = '';
+  hiddenRows.delete(segmentId);
+  if (entryEl) {
+    entryEl.remove();
+  }
+  updateHiddenPanel();
+}
+
 tableBody.addEventListener('click', (event) => {
-  if (event.target.classList.contains('preview')) {
+  const target = event.target;
+  if (target.classList.contains('hide-btn')) {
+    const row = target.closest('tr');
+    hideSegmentRow(row);
+    return;
+  }
+  if (target.classList.contains('preview')) {
     const row = event.target.closest('tr');
     const segmentId = row.dataset.segmentId;
-    const start = row.querySelector('.start').value.trim();
-    const end = row.querySelector('.end').value.trim();
+    const isManual = row.dataset.manual === '1';
+    let start;
+    let end;
+    if (isManual) {
+      const normalized = normalizeManualTimes(row);
+      if (!normalized) {
+        showMessage('请填写有效的开始/结束时间（自定义行）。', 'info');
+        return;
+      }
+      ({ start, end } = normalized);
+    } else {
+      start = row.querySelector('.start').value.trim();
+      end = row.querySelector('.end').value.trim();
+    }
     const audioEl = row.querySelector('.player');
     const button = event.target;
     const url = `/api/segment_audio/${segmentId}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&_=${Date.now()}`;
@@ -274,26 +703,64 @@ tableBody.addEventListener('click', (event) => {
 toggleAll.addEventListener('change', () => {
   const checked = toggleAll.checked;
   document.querySelectorAll('.seg-check').forEach(cb => {
+    const row = cb.closest('tr');
+    if (row && row.classList.contains('is-hidden')) {
+      return;
+    }
     cb.checked = checked;
   });
 });
 
+if (hiddenList) {
+  hiddenList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target.classList.contains('restore-btn')) {
+      const entry = target.closest('.hidden-item');
+      if (!entry) {
+        return;
+      }
+      const segmentId = entry.dataset.segmentId || '';
+      restoreFromPanel(segmentId, entry);
+    }
+  });
+}
+
 addSelectedBtn.addEventListener('click', async () => {
   const payload = { segments: [] };
+  let manualInvalid = false;
   document.querySelectorAll('.segment-row').forEach(row => {
+    if (row.dataset.placeholder === '1' || row.classList.contains('is-hidden')) {
+      return;
+    }
     const checkbox = row.querySelector('.seg-check');
     if (!checkbox.checked) {
       return;
     }
     const segmentId = row.dataset.segmentId;
-    const start = row.querySelector('.start').value.trim();
-    const end = row.querySelector('.end').value.trim();
+    const isManual = row.dataset.manual === '1';
+    let start;
+    let end;
+    if (isManual) {
+      const normalized = normalizeManualTimes(row);
+      if (!normalized) {
+        manualInvalid = true;
+        return;
+      }
+      ({ start, end } = normalized);
+    } else {
+      start = row.querySelector('.start').value.trim();
+      end = row.querySelector('.end').value.trim();
+    }
     const transcript = row.querySelector('.transcript').value.trim();
     payload.segments.push({ id: segmentId, start, end, transcript });
   });
 
   if (!payload.segments.length) {
     showMessage('请选择至少一个句子再提交。', 'info');
+    return;
+  }
+  if (manualInvalid) {
+    showMessage('自定义行的开始/结束时间无效，请重新填写。', 'info');
     return;
   }
 
@@ -311,13 +778,74 @@ addSelectedBtn.addEventListener('click', async () => {
       throw new Error(text || '请求失败');
     }
     const result = await resp.json();
-    showMessage(`已新增 ${result.created} 条，更新 ${result.updated} 条。`, 'success');
+    const successText = `已新增 ${result.created} 条，更新 ${result.updated} 条。`;
+    showMessage(successText, 'success');
+    window.alert(successText);
   } catch (error) {
-    showMessage(`添加失败：${error}`, 'error');
+    const errorText = `添加失败：${error}`;
+    showMessage(errorText, 'error');
+    window.alert(errorText);
   } finally {
     addSelectedBtn.disabled = false;
   }
 });
+
+async function handleLoadAudio(path, noCache, options = {}) {
+  const redirect = Boolean(options.redirect);
+  if (!path) {
+    showMessage('请先输入音频文件路径。', 'info');
+    return;
+  }
+  const currentParams = new URLSearchParams(window.location.search);
+  const prevAudio = safeDecode(currentParams.get('audio'));
+  const prevNoCache = parseBoolFlag(currentParams.get('nocache'));
+  const prevUrl = `${window.location.pathname}${window.location.search}`;
+  const targetUrl = updateUrlQuery(path, Boolean(noCache), { apply: !redirect });
+  if (loadAudioBtn) {
+    loadAudioBtn.disabled = true;
+  }
+  if (addSelectedBtn) {
+    addSelectedBtn.disabled = true;
+  }
+  tableBody.innerHTML = '';
+  showMessage('正在加载音频，请稍候…');
+  startProgress();
+  try {
+    const resp = await fetch('/api/load_audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio: path,
+        no_cache: Boolean(noCache),
+      }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || '请求失败');
+    }
+    const state = await loadAppState();
+    await loadSegments();
+    const finalUrl = updateUrlQuery(state && state.audio_path ? state.audio_path : path, Boolean(noCache), { apply: !redirect });
+    if (redirect) {
+      const nextUrl = finalUrl || targetUrl || prevUrl;
+      if (nextUrl && nextUrl !== prevUrl) {
+        window.location.replace(nextUrl);
+        return;
+      }
+    }
+    completeProgress('音频加载完成');
+    showMessage('音频加载完成，可以开始筛选。', 'success');
+  } catch (error) {
+    failProgress('加载音频失败');
+    showMessage(`加载音频失败：${error}`, 'error');
+    updateUrlQuery(prevAudio, prevNoCache, { apply: true });
+  } finally {
+    stopProgress();
+    if (loadAudioBtn) {
+      loadAudioBtn.disabled = false;
+    }
+  }
+}
 
 if (loadAudioBtn) {
   loadAudioBtn.addEventListener('click', async () => {
@@ -325,44 +853,36 @@ if (loadAudioBtn) {
       return;
     }
     const path = audioPathInput.value.trim();
-    if (!path) {
-      showMessage('请先输入音频文件路径。', 'info');
-      return;
-    }
-    loadAudioBtn.disabled = true;
-    if (addSelectedBtn) {
-      addSelectedBtn.disabled = true;
-    }
-    tableBody.innerHTML = '';
-    showMessage('正在加载音频，请稍候…');
-    try {
-      const resp = await fetch('/api/load_audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio: path,
-          no_cache: noCacheCheckbox ? noCacheCheckbox.checked : false,
-        }),
-      });
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(text || '请求失败');
-      }
-      await loadAppState();
-      await loadSegments();
-      showMessage('音频加载完成，可以开始筛选。', 'success');
-    } catch (error) {
-      showMessage(`加载音频失败：${error}`, 'error');
-    } finally {
-      loadAudioBtn.disabled = false;
-    }
+    const noCache = noCacheCheckbox ? noCacheCheckbox.checked : false;
+    await handleLoadAudio(path, noCache, { redirect: true });
   });
 }
 
 async function init() {
   try {
-    await loadAppState();
-    await loadSegments();
+    const params = new URLSearchParams(window.location.search);
+    const queryAudio = params.get('audio');
+    const queryNoCache = params.get('nocache');
+
+    if (queryAudio) {
+      const decodedAudio = safeDecode(queryAudio);
+      if (audioPathInput) {
+        audioPathInput.value = decodedAudio;
+      }
+      if (noCacheCheckbox) {
+        noCacheCheckbox.checked = parseBoolFlag(queryNoCache);
+      }
+      await handleLoadAudio(decodedAudio, parseBoolFlag(queryNoCache));
+      return;
+    }
+
+    const state = await loadAppState();
+    const segments = await loadSegments();
+    if (!state.loaded) {
+      showMessage('请先在上方输入音频文件路径并点击“加载音频”。');
+    } else if (!segments.length) {
+      showMessage('当前音频没有检测到合适的片段。');
+    }
   } catch (error) {
     showMessage(`初始化失败：${error}`, 'error');
   }
@@ -500,14 +1020,49 @@ def get_whisper_model():
     return _WHISPER_MODEL
 
 
-def transcribe_audio_segments(path: Path) -> List[Dict[str, Any]]:
-    model = get_whisper_model()
-    result = model.transcribe(
-        str(path),
+def _whisper_transcribe(model, audio_path: Path):
+    return model.transcribe(
+        str(audio_path),
         language="en",
         task="transcribe",
         verbose=False,
     )
+
+
+def _convert_audio_for_whisper(path: Path) -> Path:
+    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    temp_path = Path(handle.name)
+    handle.close()
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(path),
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        str(temp_path),
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return temp_path
+
+
+def transcribe_audio_segments(path: Path) -> List[Dict[str, Any]]:
+    model = get_whisper_model()
+    try:
+        result = _whisper_transcribe(model, path)
+    except OSError as exc:
+        if getattr(exc, "errno", None) != errno.EPIPE:
+            raise
+        temp_path = _convert_audio_for_whisper(path)
+        try:
+            result = _whisper_transcribe(model, temp_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
     segments = result.get("segments") or []
     output: List[Dict[str, Any]] = []
     for item in segments:
@@ -519,6 +1074,99 @@ def transcribe_audio_segments(path: Path) -> List[Dict[str, Any]]:
         text = (item.get("text") or "").strip()
         output.append({"start": start, "end": end, "text": text})
     return output
+
+
+def _split_transcript_sentences(text: str) -> List[str]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+    parts = [part.strip() for part in SENTENCE_SPLIT_RE.split(cleaned) if part.strip()]
+    return parts or [cleaned]
+
+
+def _append_segment_text(store: Dict[int, List[str]], segment: Segment, text: str) -> None:
+    cleaned = text.strip()
+    if not cleaned:
+        return
+    bucket = store.setdefault(segment.ident, [])
+    if not bucket or bucket[-1] != cleaned:
+        bucket.append(cleaned)
+
+
+def _distribute_sentence_counts(weights: List[float], total: int) -> List[int]:
+    if total <= 0 or not weights:
+        return [0] * len(weights)
+    normalized = [w if w > 0 else 0.0 for w in weights]
+    total_weight = sum(normalized)
+    if total_weight <= 0:
+        normalized = [1.0] * len(weights)
+        total_weight = float(len(weights))
+    raw_counts = [(w / total_weight) * total for w in normalized]
+    counts = [int(math.floor(value)) for value in raw_counts]
+    assigned = sum(counts)
+    remainder = total - assigned
+    if remainder > 0:
+        order = sorted(
+            ((raw_counts[idx] - counts[idx], idx) for idx in range(len(raw_counts))),
+            key=lambda item: (-item[0], item[1]),
+        )
+        if not order:
+            order = [(0.0, idx) for idx in range(len(raw_counts))]
+        idx = 0
+        while remainder > 0 and order:
+            _, target_idx = order[idx % len(order)]
+            counts[target_idx] += 1
+            remainder -= 1
+            idx += 1
+    return counts
+
+
+def _assign_chunk_text_to_overlaps(
+    text: str,
+    overlaps: List[Tuple[Segment, float, float]],
+    store: Dict[int, List[str]],
+) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned or not overlaps:
+        return False
+
+    sentences = _split_transcript_sentences(cleaned)
+    if not sentences:
+        return False
+
+    if len(overlaps) == 1:
+        _append_segment_text(store, overlaps[0][0], cleaned)
+        return True
+
+    if len(sentences) == 1:
+        target = max(overlaps, key=lambda item: (item[1], -item[2]))
+        _append_segment_text(store, target[0], cleaned)
+        return True
+
+    weights = [max(item[1], 0.0) for item in overlaps]
+    counts = _distribute_sentence_counts(weights, len(sentences))
+    cursor = 0
+    assigned = 0
+    last_segment = None
+    for idx, (segment, _, _) in enumerate(overlaps):
+        take = counts[idx]
+        if take <= 0:
+            continue
+        chunk_part = " ".join(sentences[cursor : cursor + take]).strip()
+        cursor += take
+        if chunk_part:
+            _append_segment_text(store, segment, chunk_part)
+            last_segment = segment
+            assigned += 1
+
+    if cursor < len(sentences):
+        chunk_part = " ".join(sentences[cursor:]).strip()
+        if chunk_part:
+            target_segment = last_segment or overlaps[-1][0]
+            _append_segment_text(store, target_segment, chunk_part)
+            assigned += 1
+
+    return assigned > 0
 
 
 def attach_transcripts(segments: List[Segment], transcript_chunks: List[Dict[str, Any]]) -> None:
@@ -539,27 +1187,40 @@ def attach_transcripts(segments: List[Segment], transcript_chunks: List[Dict[str
 
         chunk_len = max(0.01, chunk_end - chunk_start)
         chunk_mid = (chunk_start + chunk_end) / 2
+        primary_seg: Segment | None = None
         best_seg: Segment | None = None
         best_overlap_ratio = 0.0
         fallback_seg: Segment | None = None
         fallback_distance = float("inf")
+        overlap_entries: List[Tuple[Segment, float, float]] = []
 
         for seg in segments:
             seg_mid = (seg.start + seg.end) / 2
             distance = abs(seg_mid - chunk_mid)
             overlap = min(seg.end, chunk_end) - max(seg.start, chunk_start)
             overlap_ratio = max(0.0, overlap) / chunk_len
+            if primary_seg is None and (seg.start - 0.15) <= chunk_mid <= (seg.end + 0.15):
+                primary_seg = seg
             if overlap_ratio > best_overlap_ratio:
                 best_overlap_ratio = overlap_ratio
                 best_seg = seg
             if distance < fallback_distance:
                 fallback_distance = distance
                 fallback_seg = seg
+            if overlap > 0:
+                overlap_entries.append((seg, overlap_ratio, distance))
+
+        if overlap_entries:
+            overlap_entries.sort(key=lambda item: (item[0].start, item[0].ident))
+            if _assign_chunk_text_to_overlaps(text, overlap_entries, texts_by_segment):
+                continue
 
         assigned_seg = None
-        if best_seg and best_overlap_ratio >= 0.12:
+        if primary_seg is not None:
+            assigned_seg = primary_seg
+        elif best_seg and best_overlap_ratio >= 0.12:
             assigned_seg = best_seg
-        elif fallback_seg and fallback_distance <= 1.2:
+        elif fallback_seg and fallback_distance <= 0.8:
             assigned_seg = fallback_seg
         elif best_seg:
             assigned_seg = best_seg
@@ -839,7 +1500,7 @@ def load_audio_file(audio_path: Path, *, use_cache: bool = True) -> None:
 
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CLB9 listening segment picker")
-    parser.add_argument("--audio", type=Path, default=Path("/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_2_1.mp3"), help="要处理的音频文件路径")
+    parser.add_argument("--audio", type=Path, default=None, help="启动时可选的音频文件路径")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址")
     parser.add_argument("--port", type=int, default=5050, help="监听端口")
     parser.add_argument("--no-cache", action="store_true", help="忽略现有 Whisper 缓存并重新转写")
@@ -848,13 +1509,15 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
 
 def main(argv: Iterable[str] | None = None) -> None:
     args = parse_args(argv or sys.argv[1:])
-    try:
-        load_audio_file(args.audio, use_cache=not args.no_cache)
-    except FileNotFoundError as exc:
-        missing = getattr(exc, "filename", str(args.audio))
-        raise SystemExit(f"找不到音频文件：{missing}") from None
-    except RuntimeError as exc:
-        raise SystemExit(str(exc)) from exc
+
+    if args.audio is not None:
+        try:
+            load_audio_file(args.audio, use_cache=not args.no_cache)
+        except FileNotFoundError as exc:
+            missing = getattr(exc, "filename", str(args.audio))
+            raise SystemExit(f"找不到音频文件：{missing}") from None
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
 
     print(f"打开 http://{args.host}:{args.port} 开始筛选。")
     app.run(host=args.host, port=args.port, debug=False)

@@ -16,6 +16,12 @@ const writingOriginalContent = writingOriginal.querySelector(".content");
 const answerBox = document.getElementById("answer-box");
 const easeButtons = document.getElementById("ease-buttons");
 
+const statusUserSuffix = (() => {
+  if (!statusEl) return "";
+  const name = statusEl.dataset.username;
+  return name ? ` (user: ${name})` : "";
+})();
+
 let currentCard = null;
 let answerShown = false;
 
@@ -236,7 +242,7 @@ async function loadCard() {
     currentCard = payload;
     renderCard(payload);
     const counts = payload.counts || {};
-    statusEl.textContent = `词汇 ｜ 待 ${counts.due ?? 0} ｜ 学 ${counts.learning ?? 0} ｜ 新 ${counts.new ?? 0}`;
+    statusEl.textContent = `待 ${counts.due ?? 0} ｜ 学 ${counts.learning ?? 0} ｜ 新 ${counts.new ?? 0}${statusUserSuffix}`;
     revealBtn.disabled = false;
   } catch (err) {
     statusEl.textContent = `获取卡片失败：${err.message}`;

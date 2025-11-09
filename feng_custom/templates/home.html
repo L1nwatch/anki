@@ -9,27 +9,31 @@
   <body>
     <main class="deck-selector">
       <header>
-        <h1>请选择练习内容</h1>
-        <p>使用自定义网页界面复习目标语言。</p>
+        <h1>你好，{{ display_name }}！</h1>
+        <p>请选择要复习的牌组。</p>
       </header>
 
+      {% if deck_options %}
       <section class="deck-options">
-        <a class="deck-option" href="{{ url_for('english_index') }}">
-          <div class="deck-title">{{ english_deck }}</div>
-          <div class="deck-subtitle">听力、拼写、写作综合练习</div>
-          <div class="deck-counts">待复习 {{ english_counts.due }} ｜ 学习中 {{ english_counts.learning }} ｜ 新卡 {{ english_counts.new }}</div>
+        {% for deck in deck_options %}
+        <a class="deck-option" href="{{ url_for(deck.endpoint) }}">
+          <div class="deck-title">{{ deck.title }}</div>
+          <div class="deck-subtitle">{{ deck.subtitle }}</div>
+          <div class="deck-counts">
+            <div>待复习 {{ deck.counts.due }} ｜ 学习中 {{ deck.counts.learning }} ｜ 新卡 {{ deck.counts.new }}</div>
+            <div>已学单词 {{ deck.counts.words_learned }} ｜ 未学 {{ deck.counts.words_remaining }} ｜ 总计 {{ deck.counts.words_total }}</div>
+          </div>
         </a>
-        <a class="deck-option" href="{{ url_for('french_index') }}">
-          <div class="deck-title">{{ french_deck }}</div>
-          <div class="deck-subtitle">A1-A2 影子跟读与发音评分</div>
-          <div class="deck-counts">待复习 {{ french_counts.due }} ｜ 学习中 {{ french_counts.learning }} ｜ 新卡 {{ french_counts.new }}</div>
-        </a>
-        <a class="deck-option" href="{{ url_for('french_vocab_index') }}">
-          <div class="deck-title">{{ french_vocab_deck }}</div>
-          <div class="deck-subtitle">法语听写 + 英/中 释义提示</div>
-          <div class="deck-counts">待复习 {{ french_vocab_counts.due }} ｜ 学习中 {{ french_vocab_counts.learning }} ｜ 新卡 {{ french_vocab_counts.new }}</div>
-        </a>
+        {% endfor %}
       </section>
+      {% else %}
+      <section class="deck-options">
+        <div class="deck-option disabled">
+          <div class="deck-title">当前没有可用的牌组</div>
+          <div class="deck-subtitle">请联系管理员配置访问权限。</div>
+        </div>
+      </section>
+      {% endif %}
 
       <footer>
         Web 界面通过 AnkiConnect 访问牌组。确保桌面版 Anki 正在运行。

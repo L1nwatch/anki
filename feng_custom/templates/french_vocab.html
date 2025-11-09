@@ -14,7 +14,14 @@
       </header>
 
       <div class="card">
-        <div id="status">加载中…</div>
+        <div
+          id="status"
+          {% if username %}data-username="{{ username }}"
+          {% elif display_name %}data-username="{{ display_name }}"
+          {% endif %}
+        >
+          加载中…
+        </div>
 
         <div class="section-title hidden" id="prompt-title">提示</div>
         <div id="prompt" class="hidden"></div>
