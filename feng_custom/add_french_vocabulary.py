@@ -15,7 +15,9 @@ import requests
 
 API_URL = "http://127.0.0.1:8765"
 API_VERSION = 6
-DECK_NAME = "French-NCLC7-yisen"
+PRIMARY_DECK = "French-NCLC7-yisen"
+SECONDARY_DECK = "French-NCLC7"
+DEFAULT_DECKS = [PRIMARY_DECK, SECONDARY_DECK]
 MODEL_NAME = "French Vocabulary"
 TEMPLATE_NAME = "Vocabulary"
 GOOGLE_TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
@@ -270,9 +272,9 @@ def translate(word: str, target_lang: str) -> str:
     return ""
 
 
-def find_existing_notes(word: str) -> List[int]:
+def find_existing_notes(deck: str, word: str) -> List[int]:
     escaped = word.replace('"', '\\"')
-    query = f'deck:"{DECK_NAME}" French:"{escaped}"'
+    query = f'deck:"{deck}" French:"{escaped}"'
     try:
         result = invoke("findNotes", query=query)
     except RuntimeError:
@@ -319,56 +321,81 @@ def load_vocabulary(path: Path) -> List[VocabEntry]:
     return entries
 
 
-def build_note_payload(word: str, english: str, chinese: str, audio_file: str) -> dict:
-    fields = {
+def build_fields(word: str, english: str, chinese: str, audio_file: str) -> dict:
+    return {
         "French": word,
         "Audio": f"[sound:{audio_file}]" if audio_file else "",
         "English": english,
         "Chinese": chinese,
     }
+
+
+def build_note_payload(deck: str, word: str, english: str, chinese: str, audio_file: str) -> dict:
+    fields = build_fields(word, english, chinese, audio_file)
     guid = f"french-nclc7-{sanitize_for_audio(word.lower())}"
     return {
-        "deckName": DECK_NAME,
+        "deckName": deck,
         "modelName": MODEL_NAME,
         "fields": fields,
         "tags": DEFAULT_TAGS,
         "options": {
             "allowDuplicate": True,
             "duplicateScope": "deck",
-            "duplicateScopeOptions": {"deckName": DECK_NAME, "checkChildren": False},
+            "duplicateScopeOptions": {"deckName": deck, "checkChildren": False},
         },
         "guid": guid,
     }
 
 
-def ensure_notes(entries: Iterable[VocabEntry]) -> Tuple[int, int]:
+def get_existing_audio(note_ids: List[int]) -> str:
+    try:
+        notes = invoke("notesInfo", notes=note_ids) or []
+    except Exception:
+        return ""
+
+    for note in notes:
+        fields = note.get("fields") or {}
+        audio_field = fields.get("Audio") or {}
+        audio_value = audio_field.get("value") or ""
+        if audio_value.strip():
+            return audio_value.strip()
+    return ""
+
+
+def ensure_notes(deck: str, entries: Iterable[VocabEntry]) -> Tuple[int, int]:
     created = 0
-    skipped = 0
+    updated = 0
     for entry in entries:
         word = entry.french
-        existing = find_existing_notes(word)
-        if existing:
-            print(f"已存在：{word}（跳过 {len(existing)} 条）")
-            skipped += 1
-            continue
-
         english = entry.english or translate(word, "en")
         chinese = entry.chinese or translate(word, "zh-CN")
+        existing = find_existing_notes(deck, word)
         audio = ensure_audio(word)
-        payload = build_note_payload(word, english, chinese, audio)
+
+        if existing:
+            if not audio:
+                audio = get_existing_audio(existing)
+            fields = build_fields(word, english, chinese, audio)
+            for note_id in existing:
+                invoke("updateNoteFields", note={"id": note_id, "fields": fields})
+            print(f"已更新：{word}（{len(existing)} 条）")
+            updated += len(existing)
+            continue
+
+        payload = build_note_payload(deck, word, english, chinese, audio)
         invoke("addNotes", notes=[payload])
         print(f"已新增：{word}")
         created += 1
-    return created, skipped
+    return created, updated
 
 
 def main() -> None:
-    global DECK_NAME
     parser = argparse.ArgumentParser(description="Add French vocabulary to Anki decks.")
     parser.add_argument(
         "--deck",
-        default=DECK_NAME,
-        help="Target deck name (default: %(default)s)",
+        dest="decks",
+        action="append",
+        help="Target deck name (can be passed multiple times). Defaults to both French decks.",
     )
     parser.add_argument(
         "--vocab-path",
@@ -376,16 +403,23 @@ def main() -> None:
         help="Path to the vocabulary list (default: %(default)s)",
     )
     args = parser.parse_args()
-
-    DECK_NAME = args.deck
-
     vocab_path = Path(args.vocab_path).expanduser()
 
-    ensure_deck(DECK_NAME)
+    decks = args.decks or DEFAULT_DECKS
+
     ensure_model()
     entries = load_vocabulary(vocab_path)
-    created, skipped = ensure_notes(entries)
-    print(f"完成：新增 {created} 条，跳过 {skipped} 条。")
+
+    total_created = 0
+    total_updated = 0
+    for deck in decks:
+        ensure_deck(deck)
+        created, updated = ensure_notes(deck, entries)
+        print(f"{deck}: 新增 {created} 条，更新 {updated} 条。")
+        total_created += created
+        total_updated += updated
+
+    print(f"完成：新增 {total_created} 条，更新 {total_updated} 条。")
 
 
 if __name__ == "__main__":
