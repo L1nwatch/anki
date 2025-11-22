@@ -203,6 +203,8 @@ def transcribe_with_openai(path: Path, content_type: str | None = None) -> str:
 
 def normalize_for_compare(text: str) -> str:
     normalized = unicodedata.normalize("NFD", text or "")
+    # Treat typographic apostrophes the same as ASCII apostrophes, e.g., l’eau.
+    normalized = normalized.replace("\u2019", "'").replace("\u2018", "'")
     stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
     return re.sub(r"[^a-zœæç'\-]+", " ", stripped.lower()).strip()
 
