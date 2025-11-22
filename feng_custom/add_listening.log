@@ -396,3 +396,87 @@
 127.0.0.1 - - [09/Nov/2025 13:24:23] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [09/Nov/2025 13:24:23] "GET /api/app_state HTTP/1.1" 200 -
 127.0.0.1 - - [09/Nov/2025 13:24:23] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:19:37] "GET /?audio=/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_10_3_1.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:19:37] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:19:37] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:19:37] "GET /api/segments HTTP/1.1" 200 -
+/Users/fenglin/Desktop/code/anki/feng_custom/.venv/lib/python3.12/site-packages/whisper/transcribe.py:132: UserWarning: FP16 is not supported on CPU; using FP32 instead
+  warnings.warn("FP16 is not supported on CPU; using FP32 instead")
+解析完成：共识别 73 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_10_3_1.mp3
+解析完成：共识别 73 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_10_3_1.mp3
+[preview] segment=30 start=165.114 end=167.183
+解析完成：共识别 73 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_10_3_1.mp3
+  0%|          | 0/43078 [00:00<?, ?frames/s]  6%|▌         | 2580/43078 [00:01<00:18, 2149.34frames/s] 12%|█▏        | 5180/43078 [00:02<00:18, 1999.92frames/s] 17%|█▋        | 7480/43078 [00:03<00:18, 1931.81frames/s] 24%|██▍       | 10480/43078 [00:04<00:13, 2441.61frames/s] 30%|███       | 13080/43078 [00:05<00:13, 2269.80frames/s] 37%|███▋      | 15980/43078 [00:07<00:13, 2005.21frames/s] 44%|████▍     | 18880/43078 [00:09<00:13, 1753.93frames/s] 50%|█████     | 21680/43078 [00:11<00:13, 1634.33frames/s] 56%|█████▋    | 24280/43078 [00:13<00:12, 1529.72frames/s] 63%|██████▎   | 27280/43078 [00:15<00:10, 1501.58frames/s] 70%|██████▉   | 30080/43078 [00:16<00:07, 1779.97frames/s] 76%|███████▌  | 32580/43078 [00:18<00:06, 1640.01frames/s] 81%|████████  | 34980/43078 [00:20<00:05, 1524.09frames/s] 87%|████████▋ | 37680/43078 [00:22<00:03, 1451.50frames/s] 94%|█████████▍| 40680/43078 [00:23<00:01, 1725.00frames/s]100%|██████████| 43078/43078 [00:24<00:00, 1861.95frames/s]100%|██████████| 43078/43078 [00:24<00:00, 1760.93frames/s]
+127.0.0.1 - - [09/Nov/2025 17:20:46] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "GET /?audio=/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_1.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:20:46] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:22:54] "[35m[1mGET /api/segment_audio/32?start=185.739&end=189.162&_=1762726974082 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:22:54] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Nov/2025 17:22:59] "[35m[1mGET /api/segment_audio/31?start=183.455&end=185.319&_=1762726979443 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:05] "[35m[1mGET /api/segment_audio/31?start=183.455&end=185.319&_=1762726985165 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:14] "[35m[1mGET /api/segment_audio/47?start=258.700&end=262.968&_=1762726994155 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:28] "[35m[1mGET /api/segment_audio/55?start=320.435&end=325.321&_=1762727008294 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:34] "[35m[1mGET /api/segment_audio/54?start=318.268&end=320.036&_=1762727014435 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:37] "[35m[1mGET /api/segment_audio/54?start=318.268&end=320.036&_=1762727017744 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:43] "[35m[1mGET /api/segment_audio/54?start=318.268&end=320.036&_=1762727023774 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:23:52] "POST /api/add_notes HTTP/1.1" 200 -
+/Users/fenglin/Desktop/code/anki/feng_custom/.venv/lib/python3.12/site-packages/whisper/transcribe.py:132: UserWarning: FP16 is not supported on CPU; using FP32 instead
+  warnings.warn("FP16 is not supported on CPU; using FP32 instead")
+解析完成：共识别 69 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_1.mp3
+解析完成：共识别 69 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_1.mp3
+[preview] segment=32 start=185.739 end=189.162
+[preview] segment=31 start=183.455 end=185.319
+[preview] segment=31 start=183.455 end=185.319
+[preview] segment=47 start=258.700 end=262.968
+[preview] segment=55 start=320.435 end=325.321
+[preview] segment=54 start=318.268 end=320.036
+[preview] segment=54 start=318.268 end=320.036
+[preview] segment=54 start=318.268 end=320.036
+  0%|          | 0/42738 [00:00<?, ?frames/s]  7%|▋         | 3000/42738 [00:01<00:17, 2311.32frames/s] 14%|█▎        | 5836/42738 [00:02<00:13, 2701.23frames/s] 20%|██        | 8636/42738 [00:04<00:18, 1888.93frames/s] 26%|██▌       | 11152/42738 [00:05<00:18, 1698.69frames/s] 32%|███▏      | 13868/42738 [00:08<00:18, 1523.92frames/s] 39%|███▊      | 16476/42738 [00:10<00:19, 1319.40frames/s] 45%|████▌     | 19404/42738 [00:12<00:17, 1347.57frames/s] 51%|█████     | 21824/42738 [00:14<00:15, 1391.73frames/s] 58%|█████▊    | 24824/42738 [00:15<00:11, 1557.94frames/s] 65%|██████▍   | 27664/42738 [00:16<00:07, 1922.99frames/s] 71%|███████   | 30360/42738 [00:18<00:07, 1748.17frames/s] 78%|███████▊  | 33312/42738 [00:20<00:05, 1656.31frames/s] 84%|████████▍ | 35960/42738 [00:22<00:04, 1570.51frames/s] 90%|████████▉ | 38332/42738 [00:23<00:02, 1518.09frames/s] 97%|█████████▋| 41332/42738 [00:24<00:00, 1863.48frames/s]100%|██████████| 42738/42738 [00:25<00:00, 1874.26frames/s]100%|██████████| 42738/42738 [00:25<00:00, 1673.00frames/s]
+127.0.0.1 - - [09/Nov/2025 17:24:25] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:25] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:25] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:25] "GET /?audio=/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_2.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:26] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:26] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:26] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:24:49] "[35m[1mGET /api/segment_audio/33?start=179.076&end=184.269&_=1762727088953 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:24:49] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Nov/2025 17:24:58] "[35m[1mGET /api/segment_audio/34?start=184.664&end=187.285&_=1762727098283 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:25:21] "[35m[1mGET /api/segment_audio/__manual__-1?start=179.076&end=187.256&_=1762727121577 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:25:30] "POST /api/add_notes HTTP/1.1" 200 -
+/Users/fenglin/Desktop/code/anki/feng_custom/.venv/lib/python3.12/site-packages/whisper/transcribe.py:132: UserWarning: FP16 is not supported on CPU; using FP32 instead
+  warnings.warn("FP16 is not supported on CPU; using FP32 instead")
+解析完成：共识别 72 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_2.mp3
+解析完成：共识别 72 个候选句子。音频：/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_2.mp3
+[preview] segment=33 start=179.076 end=184.269
+[preview] segment=34 start=184.664 end=187.285
+[preview] segment=__manual__-1 start=179.076 end=187.256
+  0%|          | 0/39787 [00:00<?, ?frames/s]  5%|▍         | 1936/39787 [00:00<00:19, 1958.17frames/s] 12%|█▏        | 4936/39787 [00:01<00:11, 3079.12frames/s] 20%|█▉        | 7856/39787 [00:03<00:12, 2497.05frames/s] 27%|██▋       | 10808/39787 [00:05<00:14, 1945.79frames/s] 34%|███▍      | 13556/39787 [00:07<00:16, 1552.03frames/s] 41%|████      | 16340/39787 [00:09<00:15, 1477.35frames/s] 48%|████▊     | 19264/39787 [00:12<00:16, 1273.40frames/s] 56%|█████▌    | 22264/39787 [00:14<00:13, 1344.18frames/s] 58%|█████▊    | 23164/39787 [00:15<00:12, 1293.77frames/s] 65%|██████▍   | 25664/39787 [00:16<00:08, 1623.01frames/s] 71%|███████   | 28164/39787 [00:17<00:07, 1564.66frames/s] 77%|███████▋  | 30564/39787 [00:19<00:06, 1481.88frames/s] 83%|████████▎ | 32964/39787 [00:21<00:04, 1419.81frames/s] 90%|█████████ | 35964/39787 [00:23<00:02, 1540.25frames/s] 98%|█████████▊| 38964/39787 [00:23<00:00, 1943.42frames/s]100%|██████████| 39787/39787 [00:24<00:00, 1816.59frames/s]100%|██████████| 39787/39787 [00:24<00:00, 1620.20frames/s]
+127.0.0.1 - - [09/Nov/2025 17:26:06] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:06] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:06] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:06] "GET /?audio=/Users/fenglin/Desktop/code/english_listening_material/IELTS_LISTENING/ielts_11_3_3.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:07] "POST /api/load_audio HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:07] "GET /api/app_state HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:07] "GET /api/segments HTTP/1.1" 200 -
+127.0.0.1 - - [09/Nov/2025 17:26:13] "[35m[1mGET /api/segment_audio/11?start=103.969&end=112.905&_=1762727173325 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:13] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Nov/2025 17:26:24] "[35m[1mGET /api/segment_audio/12?start=113.519&end=115.215&_=1762727183949 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:27] "[35m[1mGET /api/segment_audio/13?start=115.778&end=121.310&_=1762727187762 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:34] "[35m[1mGET /api/segment_audio/14?start=121.795&end=130.278&_=1762727194505 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:45] "[35m[1mGET /api/segment_audio/11?start=103.969&end=112.905&_=1762727204816 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:47] "[35m[1mGET /api/segment_audio/12?start=113.519&end=115.215&_=1762727207713 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:54] "[35m[1mGET /api/segment_audio/12?start=113.519&end=115.215&_=1762727214643 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:26:58] "[35m[1mGET /api/segment_audio/14?start=121.795&end=130.278&_=1762727217947 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:27:08] "[35m[1mGET /api/segment_audio/14?start=121.795&end=130.278&_=1762727228422 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:27:35] "[35m[1mGET /api/segment_audio/__manual__-1?start=121.795&end=125.278&_=1762727255162 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:27:40] "[35m[1mGET /api/segment_audio/__manual__-1?start=123.795&end=125.278&_=1762727260345 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:27:48] "[35m[1mGET /api/segment_audio/__manual__-1?start=122.795&end=128.278&_=1762727268603 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:27:59] "[35m[1mGET /api/segment_audio/__manual__-1?start=122.795&end=127.278&_=1762727279741 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:28:08] "[35m[1mGET /api/segment_audio/__manual__-1?start=122.795&end=127.578&_=1762727288225 HTTP/1.1[0m" 206 -
+127.0.0.1 - - [09/Nov/2025 17:28:17] "POST /api/add_notes HTTP/1.1" 200 -

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import base64
 import difflib
+import mimetypes
 import os
 import re
 import tempfile
-import threading
 import time
 import unicodedata
 from pathlib import Path
@@ -127,14 +127,8 @@ def get_authenticated_user() -> Optional[Tuple[str, Dict[str, Any]]]:
         return None
     return user, config
 
-try:
-    import whisper  # type: ignore
-except ImportError:  # pragma: no cover - optional dependency
-    whisper = None  # type: ignore
-
-WHISPER_MODEL_NAME = os.environ.get("FRENCH_WHISPER_MODEL", "base")
-_WHISPER_MODEL = None
-_WHISPER_LOCK = threading.Lock()
+OPENAI_AUDIO_MODEL = os.environ.get("OPENAI_AUDIO_MODEL", "gpt-4o-mini-transcribe")
+OPENAI_KEY_FILE = BASE_DIR / "data" / "openai_api_key.txt"
 
 
 def invoke(action: str, **params: Any) -> Any:
@@ -172,21 +166,39 @@ def media_to_data_url(filename: str | None) -> str | None:
     return f"data:audio/mpeg;base64,{data}"
 
 
-def get_whisper_model():
-    if whisper is None:  # pragma: no cover - optional dependency check
-        raise RuntimeError("whisper package is not installed. Please install openai-whisper or faster-whisper.")
-    global _WHISPER_MODEL
-    with _WHISPER_LOCK:
-        if _WHISPER_MODEL is None:
-            _WHISPER_MODEL = whisper.load_model(WHISPER_MODEL_NAME)
-    return _WHISPER_MODEL
+def load_openai_api_key() -> str:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if api_key:
+        return api_key
+    try:
+        text = OPENAI_KEY_FILE.read_text(encoding="utf-8").strip()
+        if text:
+            return text
+    except FileNotFoundError:
+        pass
+    raise RuntimeError(
+        "缺少 OpenAI API KEY，请设置环境变量 OPENAI_API_KEY 或在 data/openai_api_key.txt 中提供。"
+    )
 
 
-def transcribe_with_whisper(path: Path) -> str:
-    model = get_whisper_model()
-    result = model.transcribe(str(path), language="fr", task="transcribe")
-    text = (result.get("text") or "").strip()
-    return text
+def transcribe_with_openai(path: Path, content_type: str | None = None) -> str:
+    api_key = load_openai_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {"model": OPENAI_AUDIO_MODEL, "language": "fr"}
+    url = "https://api.openai.com/v1/audio/transcriptions"
+    mime_type = content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+    try:
+        with path.open("rb") as handle:
+            files = {"file": (path.name, handle, mime_type)}
+            resp = requests.post(url, headers=headers, data=data, files=files, timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        return (body.get("text") or "").strip()
+    except requests.RequestException as exc:  # pragma: no cover - network
+        raise RuntimeError(f"OpenAI 语音转写失败：{exc}") from exc
+    except ValueError as exc:  # pragma: no cover - invalid JSON
+        raise RuntimeError("OpenAI 返回无法解析的 JSON 数据。") from exc
 
 
 def normalize_for_compare(text: str) -> str:
@@ -694,7 +706,11 @@ def api_french_analyze():
 
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as handle:
+        original_name = audio_file.filename or "recording.webm"
+        guessed_suffix = Path(original_name).suffix or ".webm"
+        content_type = audio_file.mimetype or mimetypes.guess_type(original_name)[0]
+
+        with tempfile.NamedTemporaryFile(suffix=guessed_suffix, delete=False) as handle:
             audio_file.save(handle)
             temp_path = Path(handle.name)
 
@@ -707,7 +723,7 @@ def api_french_analyze():
             return jsonify({"error": "card mismatch"}), 409
 
         try:
-            transcript = transcribe_with_whisper(temp_path)
+            transcript = transcribe_with_openai(temp_path, content_type=content_type)
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 503
 

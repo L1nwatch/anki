@@ -30,25 +30,12 @@ DEFAULT_TAGS = ["CLB9", "Word", "ManualAdd"]
 
 # 这里硬编码一组示例单词，可根据需要增删。
 WORD_LIST = [
-    "hostel",
-    "politics",
-    "cycling",
-    "council",
-    "theatre",
-    "backstage",
-    "costumes",
-    "puppets",
-    "foyer",
-    "organisms",
-    "string",
-    "splash",
-    "symbolic",
-    "canal",
-    "exterior",
-    "rubber",
-    "pads",
-    "acoustics",
-    "critics"
+    "ceramics",
+    "scarf",
+    "interpretation",
+    "ethnography",
+    "entrepreneurs",
+    "respondents"
 ]
 
 

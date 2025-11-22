@@ -4,6 +4,12 @@
   gap: 18px;
 }
 
+.version-badge {
+  font-size: 13px;
+  color: #9fb5d1;
+  margin-top: -6px;
+}
+
 .shadow-display {
   text-align: center;
   margin-top: 8px;

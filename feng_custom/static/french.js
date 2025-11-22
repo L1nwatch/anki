@@ -21,20 +21,21 @@ const statusUserSuffix = (() => {
   return name ? ` (user: ${name})` : "";
 })();
 
-const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-const SpeechRecognition =
-  !isIOS && (window.SpeechRecognition || window.webkitSpeechRecognition);
-
 let currentCard = null;
 let answerShown = false;
 let mediaRecorder = null;
 let mediaStream = null;
 let recordedChunks = [];
 let playbackUrl = null;
-let recognition = null;
-let recognitionShouldRestart = false;
-let recognitionActive = false;
-let recognizedSegments = [];
+let recordedBlob = null;
+
+function buildRecordedBlobIfNeeded() {
+  if (recordedBlob || !recordedChunks.length) {
+    return recordedBlob;
+  }
+  recordedBlob = new Blob(recordedChunks, { type: "audio/webm" });
+  return recordedBlob;
+}
 
 const easeLabels = {
   1: "再来",
@@ -52,54 +53,6 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-function normalizeForCompare(value) {
-  return (value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-zœæç'\-]+/g, " ")
-    .trim();
-}
-
-function levenshtein(a, b) {
-  const m = a.length;
-  const n = b.length;
-  if (!m) return n;
-  if (!n) return m;
-  const dp = new Array(n + 1);
-  for (let j = 0; j <= n; j += 1) {
-    dp[j] = j;
-  }
-  for (let i = 1; i <= m; i += 1) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j += 1) {
-      const temp = dp[j];
-      if (a[i - 1] === b[j - 1]) {
-        dp[j] = prev;
-      } else {
-        dp[j] = Math.min(prev + 1, dp[j] + 1, dp[j - 1] + 1);
-      }
-      prev = temp;
-    }
-  }
-  return dp[n];
-}
-
-function similarityScore(expected, actual) {
-  const cleanExpected = normalizeForCompare(expected);
-  const cleanActual = normalizeForCompare(actual);
-  if (!cleanExpected || !cleanActual) {
-    return 0;
-  }
-  const distance = levenshtein(cleanExpected, cleanActual);
-  const maxLen = Math.max(cleanExpected.length, cleanActual.length);
-  if (!maxLen) {
-    return 0;
-  }
-  return 1 - distance / maxLen;
-}
-
 function stopActiveRecording() {
   if (mediaRecorder && mediaRecorder.state === "recording") {
     try {
@@ -110,7 +63,6 @@ function stopActiveRecording() {
     mediaStream.getTracks().forEach((track) => track.stop());
     mediaStream = null;
   }
-  stopRecognition();
   recordBtn.textContent = "开始录音";
   recordBtn.classList.remove("recording");
   recordBtn.disabled = false;
@@ -123,7 +75,7 @@ function stopActiveRecording() {
 function resetRecordingArtifacts(resetStatus = true) {
   stopActiveRecording();
   recordedChunks = [];
-  recognizedSegments = [];
+  recordedBlob = null;
   if (playbackUrl) {
     URL.revokeObjectURL(playbackUrl);
     playbackUrl = null;
@@ -132,70 +84,6 @@ function resetRecordingArtifacts(resetStatus = true) {
   playbackAudio.removeAttribute("src");
   if (resetStatus) {
     recordingStatus.textContent = "";
-  }
-}
-
-function initRecognition() {
-  if (!SpeechRecognition || recognition) {
-    return;
-  }
-  recognition = new SpeechRecognition();
-  recognition.lang = "fr-FR";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-  recognition.continuous = true;
-  recognition.onresult = (event) => {
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const result = event.results[i];
-      if (result.isFinal && result[0]) {
-        recognizedSegments.push(result[0].transcript.trim());
-      }
-    }
-  };
-  recognition.onerror = (event) => {
-    if (event.error === "no-speech") {
-      return;
-    }
-    recordingStatus.textContent = `语音识别错误：${event.error}`;
-  };
-  recognition.onstart = () => {
-    recognitionActive = true;
-  };
-  recognition.onend = () => {
-    recognitionActive = false;
-    if (recognitionShouldRestart && mediaRecorder && mediaRecorder.state === "recording") {
-      try {
-        recognition.start();
-      } catch (err) {
-        recordingStatus.textContent = `无法继续识别：${err.message}`;
-      }
-    }
-  };
-}
-
-function startRecognition() {
-  if (!SpeechRecognition) {
-    return;
-  }
-  initRecognition();
-  if (!recognition) {
-    return;
-  }
-  recognizedSegments = [];
-  recognitionShouldRestart = true;
-  try {
-    recognition.start();
-  } catch (err) {
-    recordingStatus.textContent = `语音识别未启动：${err.message}`;
-  }
-}
-
-function stopRecognition() {
-  recognitionShouldRestart = false;
-  if (recognition && recognitionActive) {
-    try {
-      recognition.stop();
-    } catch (err) {}
   }
 }
 
@@ -213,6 +101,7 @@ async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaStream = stream;
     recordedChunks = [];
+    recordedBlob = null;
     mediaRecorder = new MediaRecorder(stream);
     mediaRecorder.ondataavailable = (event) => {
       if (event.data?.size) {
@@ -226,6 +115,7 @@ async function startRecording() {
       }
       const mimeType = event.target?.mimeType || "audio/webm";
       const blob = new Blob(recordedChunks, { type: mimeType });
+      recordedBlob = blob;
       playbackUrl = URL.createObjectURL(blob);
       playbackAudio.src = playbackUrl;
       playbackAudio.classList.remove("hidden");
@@ -237,7 +127,6 @@ async function startRecording() {
     recordingStatus.textContent = "录音中… 影子跟读吧！";
     recordingStatus.classList.add("recording");
     recordBtn.disabled = false;
-    startRecognition();
   } catch (err) {
     recordBtn.disabled = false;
     recordingStatus.textContent = `无法访问麦克风：${err.message}`;
@@ -246,6 +135,19 @@ async function startRecording() {
 
 function stopRecording() {
   stopActiveRecording();
+}
+
+async function ensureRecordingStopped() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    await new Promise((resolve) => {
+      mediaRecorder.addEventListener("stop", resolve, { once: true });
+      try {
+        mediaRecorder.stop();
+      } catch (err) {
+        resolve();
+      }
+    });
+  }
 }
 
 function renderEaseButtons(buttons) {
@@ -284,9 +186,7 @@ function clearUI() {
   feedbackBox.textContent = "";
   easeButtons.classList.add("hidden");
   easeButtons.innerHTML = "";
-  recordingStatus.textContent = SpeechRecognition
-    ? "点击“开始录音”进行跟读练习。"
-    : "浏览器不支持语音识别，但仍可录音回放。";
+  recordingStatus.textContent = "点击“开始录音”，完成后点击“显示答案”上传评分。";
   recordingStatus.classList.remove("recording");
   revealBtn.disabled = true;
   revealBtn.classList.remove("hidden");
@@ -303,47 +203,64 @@ function renderCard(payload) {
     promptAudio.removeAttribute("src");
     promptAudioWrapper.classList.add("hidden");
   }
-  recordingStatus.textContent = SpeechRecognition
-    ? "点击“开始录音”进行跟读练习。"
-    : "浏览器不支持语音识别，但仍可录音回放。";
+  recordingStatus.textContent = "点击“开始录音”，完成后点击“显示答案”上传评分。";
 }
 
-async function evaluatePronunciation() {
+async function analyzePronunciation() {
   if (!currentCard) {
     return;
   }
 
-  if (!SpeechRecognition) {
-    feedbackBox.textContent = "当前浏览器不支持语音识别，请通过回放手动判断发音。";
-    feedbackBox.classList.remove("hidden");
-    transcriptBox.classList.add("hidden");
-    transcriptBox.innerHTML = "";
+  buildRecordedBlobIfNeeded();
+
+  if (!recordedBlob) {
+    transcriptBox.innerHTML = "未找到录音，请先录音后再评分。";
+    transcriptBox.classList.remove("hidden");
+    feedbackBox.textContent = "";
+    feedbackBox.classList.add("hidden");
     return;
   }
 
-  const expected = currentCard.data?.sentence || "";
-  const actual = recognizedSegments.join(" ").trim();
-  if (actual) {
-    transcriptBox.innerHTML = `<strong>语音识别：</strong> ${escapeHtml(actual)}`;
-    transcriptBox.classList.remove("hidden");
-  } else {
-    transcriptBox.innerHTML = "语音识别未返回结果，可能需要更明确的发音。";
-    transcriptBox.classList.remove("hidden");
-  }
-  let feedback = "未识别到有效文本，请再试一次。";
-  if (actual) {
-    const score = similarityScore(expected, actual);
-    const pct = Math.round(score * 100);
-    if (score >= 0.85) {
-      feedback = `匹配度 ${pct}%：发音非常接近，继续保持！`;
-    } else if (score >= 0.6) {
-      feedback = `匹配度 ${pct}%：不错，可以再注意重音或连读。`;
-    } else {
-      feedback = `匹配度 ${pct}%：识别偏差较大，建议重新听原音后再试。`;
+  transcriptBox.innerHTML = "正在上传并分析录音…";
+  transcriptBox.classList.remove("hidden");
+  feedbackBox.classList.add("hidden");
+  feedbackBox.textContent = "";
+
+  const form = new FormData();
+  form.append("cardId", currentCard.cardId);
+  const uploadName = recordedBlob.type && recordedBlob.type.includes("mp4")
+    ? "recording.m4a"
+    : "recording.webm";
+  form.append("audio", recordedBlob, uploadName);
+
+  try {
+    const res = await fetch("/api/fr/analyze", { method: "POST", body: form });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || `服务器返回 ${res.status}`);
     }
+    const payload = await res.json();
+    const transcript = payload.transcript || "";
+    const feedback = payload.feedback || "";
+    if (transcript) {
+      transcriptBox.innerHTML = `<strong>转写：</strong> ${escapeHtml(transcript)}`;
+    } else {
+      transcriptBox.innerHTML = "未识别到有效文本。";
+    }
+    transcriptBox.classList.remove("hidden");
+    if (feedback) {
+      feedbackBox.textContent = feedback;
+      feedbackBox.classList.remove("hidden");
+    } else {
+      feedbackBox.textContent = "";
+      feedbackBox.classList.add("hidden");
+    }
+  } catch (err) {
+    transcriptBox.innerHTML = `分析失败：${escapeHtml(err.message)}`;
+    transcriptBox.classList.remove("hidden");
+    feedbackBox.textContent = "";
+    feedbackBox.classList.add("hidden");
   }
-  feedbackBox.textContent = feedback;
-  feedbackBox.classList.remove("hidden");
 }
 
 async function showAnswer() {
@@ -352,6 +269,7 @@ async function showAnswer() {
   }
   answerShown = true;
   stopRecording();
+  await ensureRecordingStopped();
   try {
     await fetch("/api/fr/reveal", { method: "POST" });
   } catch (err) {
@@ -369,11 +287,6 @@ async function showAnswer() {
     exampleFrEl.textContent = "";
     exampleEnEl.textContent = "";
   }
-  await evaluatePronunciation();
-  revealBtn.classList.add("hidden");
-  if (currentCard && Array.isArray(currentCard.buttons)) {
-    renderEaseButtons(currentCard.buttons);
-  }
   const revealData = currentCard?.data || {};
   if (revealData.audioUrl && promptAudio && promptAudioWrapper) {
     promptAudioWrapper.classList.remove("hidden");
@@ -383,6 +296,11 @@ async function showAnswer() {
       promptAudio.currentTime = 0;
       promptAudio.play().catch(() => {});
     } catch (err) {}
+  }
+  await analyzePronunciation();
+  revealBtn.classList.add("hidden");
+  if (currentCard && Array.isArray(currentCard.buttons)) {
+    renderEaseButtons(currentCard.buttons);
   }
 }
 
@@ -450,9 +368,6 @@ function init() {
     revealBtn.disabled = true;
     await showAnswer();
   });
-  if (!SpeechRecognition) {
-    recordingStatus.textContent = "浏览器不支持语音识别，将无法自动评分。";
-  }
   loadCard();
 }
 
