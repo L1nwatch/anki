@@ -7,7 +7,9 @@ const revealBtn = document.getElementById("reveal-btn");
 const recordingStatus = document.getElementById("recording-status");
 const playbackAudio = document.getElementById("playback-audio");
 const answerBox = document.getElementById("answer-box");
-const meaningEl = document.getElementById("english-meaning");
+const pronunciationEl = document.getElementById("pronunciation-text");
+const englishEl = document.getElementById("english-meaning");
+const chineseEl = document.getElementById("chinese-meaning");
 const exampleBlock = document.getElementById("example-block");
 const exampleFrEl = document.getElementById("example-fr");
 const exampleEnEl = document.getElementById("example-en");
@@ -43,6 +45,26 @@ const easeLabels = {
   3: "良好",
   4: "容易",
 };
+
+function setTextDisplay(el, value, allowHtml = false) {
+  if (!el) return;
+  const hasValue = Boolean(value);
+  if (hasValue) {
+    if (allowHtml) {
+      el.innerHTML = value;
+    } else {
+      el.textContent = value;
+    }
+    el.classList.remove("hidden");
+  } else {
+    if (allowHtml) {
+      el.innerHTML = "";
+    } else {
+      el.textContent = "";
+    }
+    el.classList.add("hidden");
+  }
+}
 
 function escapeHtml(str) {
   return (str || "")
@@ -176,7 +198,9 @@ function clearUI() {
     promptAudioWrapper.classList.add("hidden");
   }
   answerBox.classList.add("hidden");
-  meaningEl.textContent = "";
+  setTextDisplay(pronunciationEl, "");
+  setTextDisplay(englishEl, "");
+  setTextDisplay(chineseEl, "");
   exampleBlock.classList.add("hidden");
   exampleFrEl.textContent = "";
   exampleEnEl.textContent = "";
@@ -277,11 +301,27 @@ async function showAnswer() {
   }
   const data = currentCard.data || {};
   answerBox.classList.remove("hidden");
-  meaningEl.textContent = data.english || "暂无英文释义";
-  if (data.sentence) {
+  const pronunciationText = data.pronunciation ? `发音：${data.pronunciation}` : "";
+  setTextDisplay(pronunciationEl, pronunciationText);
+  if (data.english) {
+    setTextDisplay(englishEl, data.english);
+  } else if (data.englishHtml) {
+    setTextDisplay(englishEl, data.englishHtml, true);
+  } else {
+    setTextDisplay(englishEl, "暂无英文释义");
+  }
+  setTextDisplay(chineseEl, data.chinese || "");
+
+  const exampleSentence = data.exampleFr || "";
+  const exampleHtml = data.exampleEn || "";
+  if (exampleSentence || exampleHtml) {
     exampleBlock.classList.remove("hidden");
-    exampleFrEl.textContent = data.sentence;
-    exampleEnEl.textContent = data.english || "";
+    exampleFrEl.textContent = exampleSentence;
+    if (exampleHtml) {
+      exampleEnEl.innerHTML = exampleHtml;
+    } else {
+      exampleEnEl.textContent = "";
+    }
   } else {
     exampleBlock.classList.add("hidden");
     exampleFrEl.textContent = "";

@@ -20,7 +20,10 @@ API_VERSION = 6
 DECK_NAME = "French-Speaking-NCLC7"
 MODEL_NAME = "French Shadowing"
 
-VOCABULARY_PATH = Path(__file__).parent / "data" / "listen_cache" / "french_speaking.txt"
+VOCABULARY_CANDIDATES = [
+    Path(__file__).parent / "data" / "listen_cache" / "french_speaking-20251122.txt",
+    Path(__file__).parent / "data" / "listen_cache" / "french_speaking.txt",
+]
 TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
 FRENCH_VOICES = ["Thomas", "Amelie", "Alice", "Claire", "Aurelie"]
 ANKI_MEDIA_DIR = (
@@ -49,6 +52,11 @@ SHADOWING_CSS = """
   color: #102a66;
   margin-bottom: 16px;
 }
+.shadow-ipa {
+  font-size: 24px;
+  color: #2b446d;
+  margin-top: 18px;
+}
 .shadow-instruction {
   font-size: 18px;
   color: #506690;
@@ -59,6 +67,11 @@ SHADOWING_CSS = """
   color: #1b365d;
   margin-top: 14px;
   font-weight: 600;
+}
+.shadow-chinese {
+  font-size: 24px;
+  color: #1f2d40;
+  margin-top: 10px;
 }
 .shadow-feedback {
   margin-top: 24px;
@@ -86,7 +99,9 @@ BACK_TEMPLATE = """
 <div class="shadow-card">
   <div class="shadow-sentence">{{ExampleFR}}</div>
   {{#Audio}}<div class="shadow-audio">{{Audio}}</div>{{/Audio}}
-  <div class="shadow-english">{{ExampleEN}}</div>
+  {{#IPA}}<div class="shadow-ipa">发音：{{IPA}}</div>{{/IPA}}
+  {{#English}}<div class="shadow-english">{{English}}</div>{{/English}}
+  {{#Chinese}}<div class="shadow-chinese">{{Chinese}}</div>{{/Chinese}}
   <div class="shadow-feedback" id="shadow-feedback" style="display:none;"></div>
 </div>
 <script>
@@ -112,11 +127,21 @@ BACK_TEMPLATE = """
 """
 
 
+def resolve_vocabulary_path() -> Path:
+  for candidate in VOCABULARY_CANDIDATES:
+    if candidate.exists():
+      return candidate
+  raise FileNotFoundError(
+      f"Vocabulary list not found. Checked: {', '.join(str(p) for p in VOCABULARY_CANDIDATES)}"
+  )
+
+
 @dataclass
 class Row:
   french: str
-  ipa: str
+  pronunciation: str
   english: str
+  chinese: str
   example_fr: str
   example_en: str
   tags: List[str]
@@ -145,6 +170,7 @@ def ensure_model() -> None:
       {"name": "IPA"},
       {"name": "Audio"},
       {"name": "English"},
+      {"name": "Chinese"},
       {"name": "ExampleFR"},
       {"name": "ExampleEN"},
   ]
@@ -167,8 +193,9 @@ def ensure_model() -> None:
     )
   else:
     existing_fields = invoke("modelFieldNames", modelName=MODEL_NAME) or []
-    if "Audio" not in existing_fields:
-      invoke("modelFieldAdd", modelName=MODEL_NAME, fieldName="Audio")
+    for fname in ("Audio", "Chinese"):
+      if fname not in existing_fields:
+        invoke("modelFieldAdd", modelName=MODEL_NAME, fieldName=fname)
 
   invoke(
       "updateModelTemplates",
@@ -212,38 +239,51 @@ def translate_text(text: str, target_lang: str) -> str:
     return ""
 
 
-def load_vocabulary_rows() -> List[Row]:
-  sentences: List[str] = []
+def load_vocabulary_rows(vocab_path: Path) -> List[Row]:
+  entries: List[Row] = []
   seen: set[str] = set()
-  with VOCABULARY_PATH.open(encoding="utf-8") as handle:
+
+  def parse_line(raw: str) -> tuple[str, str, str, str]:
+    text = raw.strip()
+    if not text:
+      return "", "", "", ""
+    arrow = "→" if "→" in text else "->" if "->" in text else None
+    if not arrow:
+      return text, "", "", ""
+    french, rest = text.split(arrow, 1)
+    french = french.strip()
+    parts = [part.strip() for part in rest.split("|")]
+    pronunciation = parts[0] if parts else ""
+    chinese = parts[1] if len(parts) > 1 else ""
+    english = " | ".join(parts[2:]).strip() if len(parts) > 2 else ""
+    return french, pronunciation, english, chinese
+
+  with vocab_path.open(encoding="utf-8") as handle:
     for raw in handle:
-      sentence = raw.strip()
-      if not sentence:
+      french, pronunciation, english, chinese = parse_line(raw)
+      if not french:
         continue
-      key = sentence.lower()
+      key = french.lower()
       if key in seen:
         continue
       seen.add(key)
-      sentences.append(sentence)
+      english = english or translate_text(french, "en")
+      chinese = chinese or translate_text(french, "zh-CN")
+      combined = "<br>".join(part for part in (english, chinese) if part)
+      entries.append(
+          Row(
+              french=french,
+              pronunciation=pronunciation,
+              english=english,
+              chinese=chinese,
+              example_fr=french,
+              example_en=combined or english or chinese,
+              tags=["shadowing::vocabulary", "shadowing::speaking"],
+          )
+      )
 
-  random.shuffle(sentences)
-
-  rows: List[Row] = []
-  for sentence in sentences:
-    english = translate_text(sentence, "en")
-    chinese = translate_text(sentence, "zh-CN")
-    combined = "<br>".join(part for part in (english, chinese) if part)
-    rows.append(
-        Row(
-            french=sentence,
-            ipa="",
-            english=english,
-            example_fr=sentence,
-            example_en=combined or english,
-            tags=["shadowing::vocabulary", "shadowing::speaking"],
-        )
-    )
-  return rows
+  random.shuffle(entries)
+  return entries
 
 
 def sanitize_audio_name(text: str) -> str:
@@ -322,9 +362,10 @@ def build_note(row: Row, audio_field: str) -> Dict[str, Any]:
       "modelName": MODEL_NAME,
       "fields": {
           "French": row.french,
-          "IPA": row.ipa,
+          "IPA": row.pronunciation,
           "Audio": audio_field,
           "English": row.english,
+          "Chinese": row.chinese,
           "ExampleFR": row.example_fr,
           "ExampleEN": row.example_en,
       },
@@ -343,12 +384,14 @@ def add_new_notes(notes: List[Dict[str, Any]]) -> int:
   return added
 
 def main() -> None:
-  if not VOCABULARY_PATH.exists():
-    raise SystemExit(f"Vocabulary list not found: {VOCABULARY_PATH}")
+  try:
+    vocab_path = resolve_vocabulary_path()
+  except FileNotFoundError as exc:
+    raise SystemExit(str(exc)) from exc
   ensure_deck()
   ensure_model()
   removed = clear_deck_notes()
-  rows = load_vocabulary_rows()
+  rows = load_vocabulary_rows(vocab_path)
   if not rows:
     print("No vocabulary entries to import.")
     return

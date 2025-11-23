@@ -413,11 +413,40 @@ def build_french_payload(card: Dict[str, Any]) -> Dict[str, Any]:
     audio_file = extract_sound(fields.get("Audio", {}).get("value", ""))
     sentence = fields.get("ExampleFR", {}).get("value", "")
     word = fields.get("French", {}).get("value", "")
+    pronunciation = fields.get("IPA", {}).get("value", "")
+    english_text = fields.get("English", {}).get("value", "")
+    example_fr_value = fields.get("ExampleFR", {}).get("value", "")
+    example_en_value = fields.get("ExampleEN", {}).get("value", "")
+    chinese_text = fields.get("Chinese", {}).get("value", "")
+    example_en_lines = [
+        seg.strip()
+        for seg in re.split(r"<br\s*/?>", example_en_value or "", flags=re.IGNORECASE)
+        if seg.strip()
+    ]
+    if not english_text and example_en_lines:
+        english_text = example_en_lines[0]
+        if not chinese_text and len(example_en_lines) > 1:
+            chinese_text = "<br>".join(example_en_lines[1:])
+    example_fr_display = ""
+    if example_fr_value.strip() and example_fr_value.strip() != sentence.strip():
+        example_fr_display = example_fr_value
+    normalized_english = english_text.strip()
+    normalized_chinese = chinese_text.strip()
+    translated_lines = {value for value in (normalized_english, normalized_chinese) if value}
+    filtered_example_lines = [
+        seg for seg in example_en_lines if seg not in translated_lines
+    ]
+    example_en_display = "<br>".join(filtered_example_lines)
+    display_english = english_text or (example_en_lines[0] if example_en_lines else "")
     data = {
         "sentence": sentence,
         "word": word,
-        "english": fields.get("ExampleEN", {}).get("value", ""),
-        "exampleFr": sentence,
+        "pronunciation": pronunciation,
+        "english": display_english,
+        "englishHtml": example_en_value,
+        "chinese": chinese_text,
+        "exampleFr": example_fr_display,
+        "exampleEn": example_en_display,
         "audioUrl": media_to_data_url(audio_file) if audio_file else None,
     }
     return {"type": "shadowing", "data": data}
