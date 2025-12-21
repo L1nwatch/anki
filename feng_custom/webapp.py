@@ -295,30 +295,73 @@ def tokenize(text: str | None) -> List[str]:
     return TOKEN_RE.findall(text)
 
 
-def build_diff(expected: str | None, actual: str | None) -> Dict[str, Any]:
-    exp_tokens = tokenize(expected)
-    act_tokens = tokenize(actual)
+def normalize_token_for_diff(token: str) -> str:
+    """Lowercase tokens and treat curly apostrophes the same as straight ones."""
+    if token is None:
+        return ""
+    return token.replace("\u2019", "'").replace("\u2018", "'").lower()
+
+
+def _diff_sequences(
+    exp_seq: List[str], act_seq: List[str], *, granularity: str | None = None
+) -> Dict[str, Any]:
     differ = difflib.Differ()
-    diff = list(differ.compare([t.lower() for t in exp_tokens], [t.lower() for t in act_tokens]))
+    exp_norm = [normalize_token_for_diff(t) for t in exp_seq]
+    act_norm = [normalize_token_for_diff(t) for t in act_seq]
+    diff = list(differ.compare(exp_norm, act_norm))
     expected_out: List[Dict[str, str]] = []
     actual_out: List[Dict[str, str]] = []
     counts = {"match": 0, "missing": 0, "extra": 0}
+    exp_idx = 0
+    act_idx = 0
+
+    def _make_token(text: str, status: str) -> Dict[str, str]:
+        token: Dict[str, str] = {"text": text.lower(), "status": status}
+        if granularity:
+            token["granularity"] = granularity
+        return token
+
     for entry in diff:
         if entry.startswith("? "):
             continue
         op = entry[:2]
-        tok = entry[2:]
         if op == "  ":
             counts["match"] += 1
-            expected_out.append({"text": tok, "status": "match"})
-            actual_out.append({"text": tok, "status": "match"})
+            if exp_idx < len(exp_seq):
+                expected_out.append(_make_token(exp_seq[exp_idx], "match"))
+            if act_idx < len(act_seq):
+                actual_out.append(_make_token(act_seq[act_idx], "match"))
+            exp_idx += 1
+            act_idx += 1
         elif op == "- ":
             counts["missing"] += 1
-            expected_out.append({"text": tok, "status": "missing"})
+            if exp_idx < len(exp_seq):
+                expected_out.append(_make_token(exp_seq[exp_idx], "missing"))
+            exp_idx += 1
         elif op == "+ ":
             counts["extra"] += 1
-            actual_out.append({"text": tok, "status": "extra"})
+            if act_idx < len(act_seq):
+                actual_out.append(_make_token(act_seq[act_idx], "extra"))
+            act_idx += 1
     return {"expected": expected_out, "actual": actual_out, "counts": counts}
+
+
+def _is_single_word(text: str, tokens: List[str]) -> bool:
+    if not text:
+        return False
+    return len(tokens) == 1 and tokens[0] == text and not any(ch.isspace() for ch in text)
+
+
+def build_diff(expected: str | None, actual: str | None) -> Dict[str, Any]:
+    exp_tokens = tokenize(expected)
+    act_tokens = tokenize(actual)
+    expected_text = (expected or "").strip()
+    actual_text = (actual or "").strip()
+    expected_is_word = bool(expected_text) and _is_single_word(expected_text, exp_tokens)
+    actual_is_word = actual_text == "" or _is_single_word(actual_text, act_tokens)
+    if expected_is_word and actual_is_word:
+        return _diff_sequences(list(expected_text), list(actual_text), granularity="char")
+    return _diff_sequences(exp_tokens, act_tokens)
 
 
 def translate_text(text: str) -> str:

@@ -44,14 +44,17 @@ function renderTokens(tokens) {
     return "";
   }
   const parts = [];
+  const isCharLevel = tokens.every((token) => token.granularity === "char");
   tokens.forEach((token, idx) => {
     const cls = token.status === "match" ? "diff-match" : token.status === "missing" ? "diff-miss" : "diff-extra";
     const html = `<span class="${cls}">${escapeHtml(token.text)}</span>`;
-    const prev = tokens[idx - 1];
-    const isPunct = /^[,.;!?):\]”’]$/.test(token.text);
-    const prevIsOpening = prev ? /^[({“‘]$/.test(prev.text) : false;
-    if (idx > 0 && !isPunct && !prevIsOpening) {
-      parts.push(" ");
+    if (!isCharLevel && idx > 0) {
+      const prev = tokens[idx - 1];
+      const isPunct = /^[,.;!?):\]”’]$/.test(token.text);
+      const prevIsOpening = prev ? /^[({“‘]$/.test(prev.text) : false;
+      if (!isPunct && !prevIsOpening) {
+        parts.push(" ");
+      }
     }
     parts.push(html);
   });
