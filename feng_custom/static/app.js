@@ -85,10 +85,13 @@ function clearUI() {
   easeButtons.innerHTML = "";
   listenInputWrapper.classList.add("hidden");
   listenInput.value = "";
+  listenInput.disabled = false;
   wordInputWrapper.classList.add("hidden");
   wordInput.value = "";
+  wordInput.disabled = false;
   writingInputWrapper.classList.add("hidden");
   writingInput.value = "";
+  writingInput.disabled = false;
   revealBtn.disabled = true;
   revealBtn.classList.remove("hidden");
 }
@@ -275,6 +278,9 @@ async function showAnswer() {
   answerBox.innerHTML = html;
   answerBox.classList.remove("hidden");
   revealBtn.classList.add("hidden");
+  listenInput.disabled = true;
+  wordInput.disabled = true;
+  writingInput.disabled = true;
 
   answerBox.querySelectorAll(".translate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -351,6 +357,40 @@ function init() {
     if (currentCard && Array.isArray(currentCard.buttons)) {
       renderEaseButtons(currentCard.buttons);
     }
+  });
+  wordInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    if (!currentCard || currentCard.type !== "word" || answerShown) {
+      return;
+    }
+    event.preventDefault();
+    revealBtn.click();
+  });
+  listenInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    if (!currentCard || currentCard.type !== "listening" || answerShown) {
+      return;
+    }
+    event.preventDefault();
+    revealBtn.click();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!answerShown || !currentCard || !Array.isArray(currentCard.buttons)) {
+      return;
+    }
+    if (!/^[1-4]$/.test(event.key)) {
+      return;
+    }
+    const ease = Number(event.key);
+    if (!currentCard.buttons.includes(ease)) {
+      return;
+    }
+    event.preventDefault();
+    submitAnswer(ease);
   });
   loadCard();
 }
